@@ -1,0 +1,42 @@
+exercise_name,muscle_group
+Bench Press,chest
+Close-Grip Bench Press,triceps
+Incline Bench Press,chest
+Decline Bench Press,chest
+Dumbbell Bench Press,chest
+Dumbbell Fly,chest
+Push-Up,chest
+Chest Press,chest
+Squat,legs
+Leg Press,legs
+Leg Extension,legs
+Leg Curl,legs
+Romanian Deadlift,legs
+Deadlift,back
+Barbell Row,back
+Dumbbell Row,back
+Lat Pulldown,back
+Pull-Up,back
+Chin-Up,back
+Seated Row,back
+Cable Row,back
+Overhead Press,shoulders
+Shoulder Press,shoulders
+Lateral Raise,shoulders
+Front Raise,shoulders
+Rear Delt Fly,shoulders
+Bicep Curl,biceps
+Hammer Curl,biceps
+Tricep Extension,triceps
+Tricep Pushdown,triceps
+Overhead Tricep Extension,triceps
+Calf Raise,legs
+Lunges,legs
+Step-Ups,legs
+Hip Thrust,legs
+Good Morning,legs
+Back Extension,back
+Shrug,back
+Face Pull,shoulders
+Upright Row,shoulders
+
