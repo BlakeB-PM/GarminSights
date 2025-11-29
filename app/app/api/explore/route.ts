@@ -11,11 +11,17 @@ const VALID_METRICS = {
   workout_type: ['total_duration_min', 'total_sessions', 'total_distance_km', 'total_tonnage'],
 } as const;
 
-// Table mappings
-const TABLE_MAP: Record<ViewType, string> = {
+// Table mappings for weekly and monthly
+const TABLE_MAP_WEEKLY: Record<ViewType, string> = {
   exercise: 'fact_exercise_weekly',
   muscle_group: 'fact_muscle_group_weekly',
   workout_type: 'fact_workout_type_weekly',
+};
+
+const TABLE_MAP_MONTHLY: Record<ViewType, string> = {
+  exercise: 'fact_exercise_monthly',
+  muscle_group: 'fact_muscle_group_monthly',
+  workout_type: 'fact_workout_type_monthly',
 };
 
 interface QueryParams {
@@ -70,8 +76,8 @@ function validateParams(params: QueryParams): { valid: boolean; error?: string }
     };
   }
 
-  if (params.period && params.period !== 'week') {
-    return { valid: false, error: `Invalid period: ${params.period}. Currently only "week" is supported` };
+  if (params.period && params.period !== 'week' && params.period !== 'month') {
+    return { valid: false, error: `Invalid period: ${params.period}. Must be "week" or "month"` };
   }
 
   return { valid: true };
@@ -83,6 +89,7 @@ function validateParams(params: QueryParams): { valid: boolean; error?: string }
 function buildQuery(
   view: ViewType,
   metric: string,
+  period: string,
   filters: {
     exercise_name?: string | null;
     muscle_group?: string | null;
@@ -91,7 +98,9 @@ function buildQuery(
     end?: string | null;
   }
 ): { query: string; params: any[] } {
-  const table = TABLE_MAP[view];
+  const tableMap = period === 'month' ? TABLE_MAP_MONTHLY : TABLE_MAP_WEEKLY;
+  const table = tableMap[view];
+  const dateColumn = period === 'month' ? 'month_start_date' : 'week_start_date';
   const whereClauses: string[] = [];
   const params: any[] = [];
 
@@ -112,12 +121,12 @@ function buildQuery(
   }
 
   if (filters.start) {
-    whereClauses.push('week_start_date >= ?');
+    whereClauses.push(`${dateColumn} >= ?`);
     params.push(filters.start);
   }
 
   if (filters.end) {
-    whereClauses.push('week_start_date <= ?');
+    whereClauses.push(`${dateColumn} <= ?`);
     params.push(filters.end);
   }
 
@@ -126,12 +135,12 @@ function buildQuery(
   // Build SELECT clause based on view
   let selectColumns: string;
   if (view === 'exercise') {
-    selectColumns = 'week_start_date, exercise_name, muscle_group, total_tonnage, total_sets, total_reps';
+    selectColumns = `${dateColumn}, exercise_name, muscle_group, total_tonnage, total_sets, total_reps`;
   } else if (view === 'muscle_group') {
-    selectColumns = 'week_start_date, muscle_group, total_tonnage, total_sets, total_reps';
+    selectColumns = `${dateColumn}, muscle_group, total_tonnage, total_sets, total_reps`;
   } else {
     // workout_type
-    selectColumns = 'week_start_date, workout_type, total_duration_min, total_sessions, total_distance_km, total_tonnage';
+    selectColumns = `${dateColumn}, workout_type, total_duration_min, total_sessions, total_distance_km, total_tonnage`;
   }
 
   // Add the metric as 'value' for consistent response format
@@ -139,7 +148,7 @@ function buildQuery(
     SELECT ${selectColumns}, ${metric} as value
     FROM ${table}
     ${whereClause}
-    ORDER BY week_start_date ASC
+    ORDER BY ${dateColumn} ASC
   `;
 
   return { query, params };
@@ -166,6 +175,7 @@ export async function GET(request: NextRequest) {
     const { query, params: queryParams } = buildQuery(
       params.view!,
       params.metric!,
+      params.period || 'week',
       {
         exercise_name: params.exercise_name,
         muscle_group: params.muscle_group,
@@ -196,27 +206,41 @@ export async function GET(request: NextRequest) {
       // Check if it's a database not found error
       if (error.message.includes('Database not found')) {
         return NextResponse.json(
-          { error: error.message },
+          { error: error.message, data: [], meta: { view: '', metric: '', period: 'week', count: 0 } },
+          { status: 404 }
+        );
+      }
+      
+      // Check if it's a "no such table" error - this means fact tables haven't been built
+      if (error.message.includes('no such table')) {
+        const tableName = error.message.match(/no such table: (\w+)/)?.[1] || 'fact table';
+        return NextResponse.json(
+          { 
+            error: `Fact table "${tableName}" does not exist. Please run the build_derived_tables.py script to create the required tables.`,
+            hint: 'Run: python scripts/build_derived_tables.py',
+            data: [], 
+            meta: { view: '', metric: '', period: 'week', count: 0 } 
+          },
           { status: 404 }
         );
       }
       
       // Check if it's a database query error
-      if (error.message.includes('no such table') || error.message.includes('Failed to open database')) {
+      if (error.message.includes('Failed to open database')) {
         return NextResponse.json(
-          { error: `Database error: ${error.message}` },
+          { error: `Database error: ${error.message}`, data: [], meta: { view: '', metric: '', period: 'week', count: 0 } },
           { status: 500 }
         );
       }
       
       return NextResponse.json(
-        { error: error.message },
+        { error: error.message, data: [], meta: { view: '', metric: '', period: 'week', count: 0 } },
         { status: 500 }
       );
     }
-
+    
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', data: [], meta: { view: '', metric: '', period: 'week', count: 0 } },
       { status: 500 }
     );
   }

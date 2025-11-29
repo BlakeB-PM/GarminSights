@@ -50,6 +50,16 @@ def get_week_start(date):
     return date - timedelta(days=days_since_monday)
 
 
+def get_month_start(date):
+    """Get the first day of the month for a given date."""
+    from datetime import date as date_type
+    if isinstance(date, date_type):
+        return date.replace(day=1)
+    elif isinstance(date, datetime):
+        return date.replace(day=1).date()
+    return None
+
+
 def parse_date(date_str):
     """Parse date string from various formats."""
     if isinstance(date_str, str):
@@ -317,7 +327,26 @@ def build_fact_workout_type_weekly(db_path):
                     WHEN sport = 'walking' THEN 'walk'
                     ELSE 'other'
                 END as workout_type,
-                CAST((julianday(stop_time) - julianday(start_time)) * 24 * 60 AS REAL) as duration_min,
+                -- Convert elapsed_time (HH:MM:SS format) to minutes
+                -- Fallback to stop_time - start_time if elapsed_time is missing
+                COALESCE(
+                    CASE 
+                        WHEN elapsed_time IS NOT NULL AND elapsed_time != '00:00:00' THEN
+                            CAST(
+                                (CAST(substr(elapsed_time, 1, 2) AS INTEGER) * 60) + 
+                                CAST(substr(elapsed_time, 4, 2) AS INTEGER) + 
+                                (CAST(substr(elapsed_time, 7, 2) AS REAL) / 60.0)
+                            AS REAL)
+                        ELSE NULL
+                    END,
+                    -- Fallback: calculate from start_time and stop_time
+                    CASE 
+                        WHEN stop_time IS NOT NULL AND start_time IS NOT NULL THEN
+                            CAST((julianday(stop_time) - julianday(start_time)) * 24 * 60 AS REAL)
+                        ELSE NULL
+                    END,
+                    0
+                ) as duration_min,
                 distance / 1000.0 as distance_km
             FROM activities
             WHERE start_time IS NOT NULL
@@ -373,6 +402,136 @@ def build_fact_workout_type_weekly(db_path):
         logger.warning(f"Could not build workout type table: {e}")
         logger.info("This is normal if the activities table doesn't exist yet")
     
+    conn.close()
+
+
+def build_fact_exercise_monthly(db_path):
+    """Build fact_exercise_monthly table from fact_exercise_weekly."""
+    logger.info("Building fact_exercise_monthly table...")
+    
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    # Create table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS fact_exercise_monthly (
+            month_start_date TEXT NOT NULL,
+            exercise_name TEXT NOT NULL,
+            muscle_group TEXT NOT NULL,
+            total_tonnage REAL DEFAULT 0,
+            total_sets INTEGER DEFAULT 0,
+            total_reps INTEGER DEFAULT 0,
+            PRIMARY KEY (month_start_date, exercise_name)
+        )
+    """)
+    
+    # Clear existing data
+    cursor.execute("DELETE FROM fact_exercise_monthly")
+    
+    # Aggregate from fact_exercise_weekly, grouping by month
+    cursor.execute("""
+        INSERT INTO fact_exercise_monthly
+        (month_start_date, exercise_name, muscle_group, total_tonnage, total_sets, total_reps)
+        SELECT 
+            DATE(week_start_date, 'start of month') as month_start_date,
+            exercise_name,
+            muscle_group,
+            SUM(total_tonnage) as total_tonnage,
+            SUM(total_sets) as total_sets,
+            SUM(total_reps) as total_reps
+        FROM fact_exercise_weekly
+        GROUP BY month_start_date, exercise_name, muscle_group
+    """)
+    
+    conn.commit()
+    count = cursor.execute("SELECT COUNT(*) FROM fact_exercise_monthly").fetchone()[0]
+    logger.info(f"Inserted {count} exercise-month records")
+    conn.close()
+
+
+def build_fact_muscle_group_monthly(db_path):
+    """Build fact_muscle_group_monthly table from fact_muscle_group_weekly."""
+    logger.info("Building fact_muscle_group_monthly table...")
+    
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    # Create table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS fact_muscle_group_monthly (
+            month_start_date TEXT NOT NULL,
+            muscle_group TEXT NOT NULL,
+            total_tonnage REAL DEFAULT 0,
+            total_sets INTEGER DEFAULT 0,
+            total_reps INTEGER DEFAULT 0,
+            PRIMARY KEY (month_start_date, muscle_group)
+        )
+    """)
+    
+    # Clear existing data
+    cursor.execute("DELETE FROM fact_muscle_group_monthly")
+    
+    # Aggregate from fact_muscle_group_weekly, grouping by month
+    cursor.execute("""
+        INSERT INTO fact_muscle_group_monthly
+        (month_start_date, muscle_group, total_tonnage, total_sets, total_reps)
+        SELECT 
+            DATE(week_start_date, 'start of month') as month_start_date,
+            muscle_group,
+            SUM(total_tonnage) as total_tonnage,
+            SUM(total_sets) as total_sets,
+            SUM(total_reps) as total_reps
+        FROM fact_muscle_group_weekly
+        GROUP BY month_start_date, muscle_group
+    """)
+    
+    conn.commit()
+    count = cursor.execute("SELECT COUNT(*) FROM fact_muscle_group_monthly").fetchone()[0]
+    logger.info(f"Inserted {count} muscle group-month records")
+    conn.close()
+
+
+def build_fact_workout_type_monthly(db_path):
+    """Build fact_workout_type_monthly table from fact_workout_type_weekly."""
+    logger.info("Building fact_workout_type_monthly table...")
+    
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    # Create table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS fact_workout_type_monthly (
+            month_start_date TEXT NOT NULL,
+            workout_type TEXT NOT NULL,
+            total_duration_min REAL DEFAULT 0,
+            total_sessions INTEGER DEFAULT 0,
+            total_distance_km REAL DEFAULT 0,
+            total_tonnage REAL DEFAULT 0,
+            PRIMARY KEY (month_start_date, workout_type)
+        )
+    """)
+    
+    # Clear existing data
+    cursor.execute("DELETE FROM fact_workout_type_monthly")
+    
+    # Aggregate from fact_workout_type_weekly, grouping by month
+    cursor.execute("""
+        INSERT INTO fact_workout_type_monthly
+        (month_start_date, workout_type, total_duration_min, total_sessions, total_distance_km, total_tonnage)
+        SELECT 
+            DATE(week_start_date, 'start of month') as month_start_date,
+            workout_type,
+            SUM(total_duration_min) as total_duration_min,
+            SUM(total_sessions) as total_sessions,
+            SUM(total_distance_km) as total_distance_km,
+            SUM(total_tonnage) as total_tonnage
+        FROM fact_workout_type_weekly
+        GROUP BY month_start_date, workout_type
+    """)
+    
+    conn.commit()
+    count = cursor.execute("SELECT COUNT(*) FROM fact_workout_type_monthly").fetchone()[0]
+    logger.info(f"Inserted {count} workout type-month records")
     conn.close()
 
 
@@ -468,6 +627,11 @@ def main():
         build_fact_exercise_weekly(str(db_path), exercise_mapping, json_files)
         build_fact_muscle_group_weekly(str(db_path))
         build_fact_workout_type_weekly(str(db_path))
+        
+        # Build monthly tables
+        build_fact_exercise_monthly(str(db_path))
+        build_fact_muscle_group_monthly(str(db_path))
+        build_fact_workout_type_monthly(str(db_path))
         
         logger.info("✅ Derived tables built successfully!")
         logger.info("Run 'python scripts/check_database.py' to verify")

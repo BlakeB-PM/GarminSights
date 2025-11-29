@@ -12,6 +12,7 @@ const navigation = [
   { name: 'Correlations', href: '/insights/correlations', icon: '🔗' },
   { name: 'Daily Data', href: '/data', icon: '📅' },
   { name: 'Training', href: '/explore', icon: '💪' },
+  { name: 'Workouts', href: '/workouts', icon: '🏋️' },
   { name: 'Settings', href: '/settings', icon: '⚙️' },
 ];
 
