@@ -32,11 +32,13 @@ export async function GET(request: NextRequest) {
     
     // Try each database file to find one with summary tables that has data
     // Prefer databases with data, and prefer days_summary over daily_summary
+    // Also prefer databases that have the intensity_time column
     let bestDb: Database.Database | null = null;
     let bestDbPath: string | null = null;
     let bestTables: Array<{ name: string }> = [];
     let bestAllTables: Array<{ name: string }> = [];
     let bestRowCount = 0;
+    let bestHasIntensityTime = false;
     
     for (const dbFile of allDbFiles) {
       try {
@@ -51,15 +53,29 @@ export async function GET(request: NextRequest) {
           // Check if this table has data and prefer days_summary
           const targetTable = testTables.find(t => t.name === 'days_summary') || testTables[0];
           
+          // Check if the table has intensity_time column (required for correct data)
+          let hasIntensityTime = false;
+          try {
+            const tableInfo = testDb.prepare(`PRAGMA table_info("${targetTable.name}")`).all() as Array<{ name: string }>;
+            hasIntensityTime = tableInfo.some(col => col.name === 'intensity_time');
+          } catch {
+            // If we can't check, assume it doesn't have it
+          }
+          
           try {
             const rowCountStmt = testDb.prepare(`SELECT COUNT(*) as count FROM "${targetTable.name}"`);
             const rowCountResult = rowCountStmt.get() as { count: number };
             const rowCount = rowCountResult.count;
             
-            // Prefer databases with data, and prefer days_summary over daily_summary
+            // Prefer databases with:
+            // 1. intensity_time column (REQUIRED - highest priority)
+            // 2. days_summary table (over daily_summary)
+            // 3. More rows
             const isBetter = 
-              rowCount > bestRowCount || // Has more rows
-              (rowCount === bestRowCount && targetTable.name === 'days_summary' && bestTables[0]?.name === 'daily_summary'); // Same rows but better table type
+              bestDb === null || // First database found
+              (hasIntensityTime && !bestHasIntensityTime) || // Has required column (highest priority)
+              (hasIntensityTime === bestHasIntensityTime && targetTable.name === 'days_summary' && bestTables[0]?.name === 'daily_summary') || // Same column status, better table
+              (hasIntensityTime === bestHasIntensityTime && targetTable.name === bestTables[0]?.name && rowCount > bestRowCount); // Same table/column status, more rows
             
             if (isBetter || bestDb === null) {
               // Close previous database if we're switching
@@ -71,6 +87,7 @@ export async function GET(request: NextRequest) {
               bestDbPath = dbFile;
               bestTables = testTables;
               bestRowCount = rowCount;
+              bestHasIntensityTime = hasIntensityTime;
               bestAllTables = testDb.prepare(`
                 SELECT name FROM sqlite_master 
                 WHERE type='table'
@@ -225,6 +242,11 @@ export async function GET(request: NextRequest) {
     
     const columns = tableInfo.map(col => col.name);
     
+    // Debug: Log if intensity_time column exists
+    if (!columns.includes('intensity_time')) {
+      console.warn(`WARNING: intensity_time column not found in ${tableName}. Available columns:`, columns.filter(c => c.includes('intensity')));
+    }
+    
     // Build WHERE clause for date filtering
     const whereConditions: string[] = [];
     if (startDate) {
@@ -240,8 +262,9 @@ export async function GET(request: NextRequest) {
       ? `WHERE ${whereConditions.join(' AND ')}`
       : '';
     
-    // Build SELECT query - use * to get all columns
+    // Build SELECT query - explicitly include intensity_time to ensure it's returned
     // Using double quotes to safely quote the table name (SQLite standard)
+    // Note: We use * but also explicitly check for intensity_time column
     query = `
       SELECT * 
       FROM "${tableName}"
@@ -251,6 +274,11 @@ export async function GET(request: NextRequest) {
     `;
     params.push(limit);
     
+    // Verify intensity_time column exists in the table
+    if (!columns.includes('intensity_time')) {
+      console.warn(`WARNING: intensity_time column missing from ${tableName} in ${dbPath}. Available intensity columns:`, columns.filter(c => c.toLowerCase().includes('intensity')));
+    }
+    
     if (!db) {
       throw new Error('Database connection not available');
     }
@@ -258,19 +286,42 @@ export async function GET(request: NextRequest) {
     const stmt = db.prepare(query);
     const rows = stmt.all(...params) as any[];
     
+    // Debug: Check if intensity_time is in the first row and log database info
+    if (rows.length > 0) {
+      const firstRow = rows[0];
+      const hasIntensityTime = 'intensity_time' in firstRow;
+      console.log(`[API Debug] Using database: ${dbPath}, table: ${tableName}`);
+      console.log(`[API Debug] intensity_time in response: ${hasIntensityTime}`);
+      console.log(`[API Debug] intensity_time value: ${firstRow.intensity_time}`);
+      console.log(`[API Debug] Available intensity columns in response:`, Object.keys(firstRow).filter(k => k.toLowerCase().includes('intensity') || k.toLowerCase().includes('moderate') || k.toLowerCase().includes('vigorous')));
+      if (!hasIntensityTime) {
+        console.warn(`[API Debug] WARNING: intensity_time column missing from API response!`);
+        console.warn(`[API Debug] Table schema columns:`, columns.filter(c => c.toLowerCase().includes('intensity')));
+      }
+    }
+    
     // Close the database if we opened it (not the singleton)
     // Don't close if it's the singleton instance from getDatabase()
     
     // Format the data - convert dates and handle nulls
+    // IMPORTANT: Preserve all columns including intensity_time even if null
     const formattedRows = rows.map(row => {
       const formatted: any = {};
-      for (const [key, value] of Object.entries(row)) {
+      // Ensure we include all columns from the table schema, even if they're null in the row
+      for (const col of columns) {
+        const value = row[col];
         if (value === null || value === undefined) {
-          formatted[key] = null;
+          formatted[col] = null;
         } else if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) {
           // It's a date string, keep as is
-          formatted[key] = value;
+          formatted[col] = value;
         } else {
+          formatted[col] = value;
+        }
+      }
+      // Also include any extra columns that might be in the row but not in schema
+      for (const [key, value] of Object.entries(row)) {
+        if (!(key in formatted)) {
           formatted[key] = value;
         }
       }

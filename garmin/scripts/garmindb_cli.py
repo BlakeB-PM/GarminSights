@@ -144,7 +144,8 @@ class GarminDbMain():
                 root_logger.info("Saved sleep files for %s (%d) to %s for processing", date, days, sleep_dir)
 
         if Statistics.weight in stats:
-            date, days = self.__get_date_and_days(GarminDb(self.gc_config.get_db_params()), latest, Weight, Weight.weight, 'weight')
+            # Weight table uses 'day' (Date) as primary key, not 'weight' (Float) for time tracking
+            date, days = self.__get_date_and_days(GarminDb(self.gc_config.get_db_params()), latest, Weight, Weight.day, 'weight')
             if days > 0:
                 weight_dir = self.gc_config.get_weight_dir()
                 root_logger.info("Date range to update: %s (%d) to %s", date, days, weight_dir)

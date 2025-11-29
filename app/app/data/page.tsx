@@ -20,7 +20,7 @@ interface DailyDataResponse {
 // Column categories for organization
 const columnCategories = {
   'Date': ['day'],
-  'Activity': ['steps', 'steps_goal', 'steps_goal_percent', 'distance', 'floors', 'floors_goal', 'floors_goal_percent', 'intensity_time', 'moderate_activity_time', 'vigorous_activity_time', 'intensity_time_goal'],
+  'Activity': ['steps', 'steps_goal', 'steps_goal_percent', 'distance', 'floors', 'floors_goal', 'floors_goal_percent', 'intensity_time_min', 'moderate_activity_time_min', 'vigorous_activity_time_min', 'intensity_time_goal'],
   'Calories': ['calories_avg', 'calories_bmr_avg', 'calories_active_avg', 'calories_consumed_avg', 'calories_goal', 'activities_calories'],
   'Sleep': ['sleep_avg', 'sleep_min', 'sleep_max', 'rem_sleep_avg', 'rem_sleep_min', 'rem_sleep_max'],
   'Heart Rate': ['hr_avg', 'hr_min', 'hr_max', 'rhr_avg', 'rhr_min', 'rhr_max', 'inactive_hr_avg', 'inactive_hr_min', 'inactive_hr_max'],
@@ -50,9 +50,9 @@ const getColumnDisplayName = (col: string): string => {
     'floors': 'Floors',
     'floors_goal': 'Floors Goal',
     'floors_goal_percent': 'Floors Goal %',
-    'intensity_time': 'Intensity Time',
-    'moderate_activity_time': 'Moderate Activity',
-    'vigorous_activity_time': 'Vigorous Activity',
+    'intensity_time_min': 'Intensity Time (min)',
+    'moderate_activity_time_min': 'Moderate (min)',
+    'vigorous_activity_time_min': 'Vigorous (min)',
     'intensity_time_goal': 'Intensity Goal',
     'calories_avg': 'Calories',
     'calories_bmr_avg': 'BMR Calories',
@@ -115,6 +115,32 @@ export default function DataPage() {
     fetchData();
   }, [startDate, endDate]);
 
+  // Helper function to convert time string (HH:MM:SS or HH:MM:SS.ffffff) to total minutes
+  const timeToMinutes = (timeStr: string | null | undefined): number | null => {
+    if (!timeStr) return null;
+    const str = String(timeStr).trim();
+    if (!str) return null;
+    
+    // Handle zero time cases
+    if (str === '00:00:00' || str.startsWith('00:00:00')) {
+      return 0;
+    }
+    
+    // Match HH:MM:SS or HH:MM:SS.ffffff format
+    const match = str.match(/^(\d{1,2}):(\d{2}):(\d{2})/);
+    if (!match) {
+      console.warn('Failed to parse time string:', str);
+      return null;
+    }
+    
+    const hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    const seconds = parseInt(match[3], 10);
+    const totalMin = hours * 60 + minutes + Math.round(seconds / 60);
+    
+    return totalMin;
+  };
+
   const fetchData = async () => {
     setLoading(true);
     setError(null);
@@ -139,8 +165,69 @@ export default function DataPage() {
         throw new Error(errorMsg);
       }
       
-      setData(response.data);
-      setColumns(response.meta.columns);
+      // Add computed columns for intensity minutes
+      const dataWithComputed = response.data.map((row: any) => {
+        // Moderate activity minutes
+        const moderateMin = timeToMinutes(row.moderate_activity_time);
+        
+        // Vigorous activity minutes
+        const vigorousMin = timeToMinutes(row.vigorous_activity_time);
+        
+        // Total intensity minutes - use intensity_time from database
+        // NOTE: intensity_time includes ALL intensity activity (not just moderate + vigorous)
+        // So we should NOT compute it from moderate + vigorous as that would be incorrect
+        let intensityMin = timeToMinutes(row.intensity_time);
+        
+        // If intensity_time is missing, it means the API isn't returning it
+        // This is a data/API issue - we can't compute it correctly from moderate + vigorous
+        // because intensity_time includes other activity types beyond just those two
+        
+        // Debug: log first row to verify computation
+        if (response.data.indexOf(row) === 0) {
+          console.log('Sample row computation:', {
+            intensity_time: row.intensity_time,
+            intensity_time_min: intensityMin,
+            moderate_activity_time: row.moderate_activity_time,
+            moderate_activity_time_min: moderateMin,
+            vigorous_activity_time: row.vigorous_activity_time,
+            vigorous_activity_time_min: vigorousMin,
+            computed_from_sum: intensityMin !== null && row.intensity_time === undefined ? 'yes' : 'no',
+            allKeys: Object.keys(row).filter(k => k.includes('intensity') || k.includes('moderate') || k.includes('vigorous')),
+            responseMetaColumns: response.meta?.columns?.filter((k: string) => k.includes('intensity') || k.includes('moderate') || k.includes('vigorous')),
+          });
+        }
+        
+        return {
+          ...row,
+          intensity_time_min: intensityMin,
+          moderate_activity_time_min: moderateMin,
+          vigorous_activity_time_min: vigorousMin,
+        };
+      });
+      
+      setData(dataWithComputed);
+      
+      // Add computed columns to the columns list, and remove the time format columns to avoid duplication
+      const baseColumns = response.meta.columns;
+      const newColumns = baseColumns.filter((col: string) => 
+        col !== 'intensity_time' && 
+        col !== 'moderate_activity_time' && 
+        col !== 'vigorous_activity_time'
+      );
+      
+      // Find where to insert the minutes columns - after intensity_time_goal or in Activity section
+      const goalIndex = newColumns.indexOf('intensity_time_goal');
+      const insertIndex = goalIndex >= 0 ? goalIndex + 1 : newColumns.length;
+      
+      // Insert all three minutes columns together
+      const minutesColumns = ['intensity_time_min', 'moderate_activity_time_min', 'vigorous_activity_time_min'];
+      minutesColumns.forEach(col => {
+        if (newColumns.indexOf(col) === -1) {
+          newColumns.splice(insertIndex, 0, col);
+        }
+      });
+      
+      setColumns(newColumns);
       setMeta(response.meta);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch data');
@@ -223,11 +310,23 @@ export default function DataPage() {
   });
 
   const formatValue = (value: any, column: string): string => {
+    // Format intensity minutes columns first (before null check, since 0 is valid)
+    if (column.endsWith('_min')) {
+      if (value === null || value === undefined) return '-';
+      if (typeof value === 'number') {
+        return Math.round(value).toString();
+      }
+      return String(value);
+    }
+    
     if (value === null || value === undefined) return '-';
     
-    // Format dates
+    // Format dates - parse date string directly to avoid timezone conversion issues
     if (column === 'day' && typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) {
-      return new Date(value).toLocaleDateString();
+      // Parse date string directly (YYYY-MM-DD) without timezone conversion
+      const [year, month, day] = value.split('T')[0].split('-').map(Number);
+      const date = new Date(year, month - 1, day);
+      return date.toLocaleDateString();
     }
     
     // Format numbers
@@ -258,16 +357,24 @@ export default function DataPage() {
     return String(value);
   };
 
-  // Organize columns by category
+  // Organize columns by category, preserving order within Activity category
   const organizedColumns = useMemo(() => {
     const organized: { [category: string]: string[] } = {};
     
+    // For Activity category, preserve the order from columns array
+    const activityColumns: string[] = [];
+    const otherColumns: string[] = [];
+    
     columns.forEach(col => {
       const category = getColumnCategory(col);
-      if (!organized[category]) {
-        organized[category] = [];
+      if (category === 'Activity') {
+        activityColumns.push(col);
+      } else {
+        if (!organized[category]) {
+          organized[category] = [];
+        }
+        organized[category].push(col);
       }
-      organized[category].push(col);
     });
     
     // Return in order of category preference
@@ -275,7 +382,10 @@ export default function DataPage() {
     const result: string[] = [];
     
     categoryOrder.forEach(cat => {
-      if (organized[cat]) {
+      if (cat === 'Activity') {
+        // Use the preserved order for Activity columns
+        result.push(...activityColumns);
+      } else if (organized[cat]) {
         result.push(...organized[cat]);
       }
     });

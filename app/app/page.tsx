@@ -6,6 +6,15 @@ import TrendCard from './components/insights/TrendCard';
 import RecoveryScore from './components/insights/RecoveryScore';
 import DataFreshnessIndicator from './components/insights/DataFreshnessIndicator';
 
+// Helper function to parse date string without timezone conversion
+function parseDateString(dateStr: string): Date {
+  if (typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+    const [year, month, day] = dateStr.split('T')[0].split('-').map(Number);
+    return new Date(year, month - 1, day);
+  }
+  return new Date(dateStr);
+}
+
 interface Insight {
   type: string;
   message: string;
@@ -89,7 +98,7 @@ export default function Home() {
           const dailyDataJson = await dailyRes.json();
           if (dailyDataJson.data) {
             const formatted = dailyDataJson.data.map((d: any) => ({
-              day: new Date(d.day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+              day: parseDateString(d.day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
               steps: d.steps || 0,
               sleep_hours: d.sleep_avg ? parseFloat(d.sleep_avg.split(':')[0]) + parseFloat(d.sleep_avg.split(':')[1]) / 60 : 0,
               stress: d.stress_avg || 0,
@@ -143,7 +152,7 @@ export default function Home() {
       <div className="mb-2">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Analytics Dashboard</h1>
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          {summary?.dataRange && `${new Date(summary.dataRange.start).toLocaleDateString()} - ${new Date(summary.dataRange.end).toLocaleDateString()}`}
+          {summary?.dataRange && `${parseDateString(summary.dataRange.start).toLocaleDateString()} - ${parseDateString(summary.dataRange.end).toLocaleDateString()}`}
         </p>
       </div>
 

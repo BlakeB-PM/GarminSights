@@ -62,11 +62,29 @@ class Analyze():
         if existing == 0 or overwrite:
             day_start_ts = datetime.datetime.combine(day_date, datetime.time.min)
             day_stop_ts = datetime.datetime.combine(day_date, datetime.time.max)
+            
+            # First, check if there are events on the current day
             first_event = SleepEvents.s_get_col_min(garmin_session, SleepEvents.timestamp, day_start_ts, day_stop_ts)
             if first_event is None:
-
-                return
+                # No events on this day, check if there are early morning events that might
+                # be continuation of sleep from previous day (within first 6 hours)
+                early_morning_end = day_start_ts + datetime.timedelta(hours=6)
+                first_event = SleepEvents.s_get_col_min(garmin_session, SleepEvents.timestamp, day_start_ts, early_morning_end)
+                if first_event is None:
+                    return
+            
+            # If we found an early morning event, look back up to 12 hours to find the actual start
+            # of the sleep session (which might be on the previous day)
+            if first_event < day_start_ts + datetime.timedelta(hours=6):
+                lookback_start = first_event - datetime.timedelta(hours=12)
+                actual_first_event = SleepEvents.s_get_col_min(garmin_session, SleepEvents.timestamp, lookback_start, day_stop_ts)
+                if actual_first_event is not None and actual_first_event < first_event:
+                    first_event = actual_first_event
+            
             last_event = SleepEvents.s_get_col_max(garmin_session, SleepEvents.timestamp, day_start_ts, day_stop_ts)
+            if last_event is None:
+                return
+                
             stats = SleepEvents.get_day_stats(garmin_session, day_date)
             entry = {
                 'day': day_date,

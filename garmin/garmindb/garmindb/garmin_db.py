@@ -277,12 +277,40 @@ class SleepEvents(GarminDb.Base, idbutils.DbObject):
 
     @classmethod
     def get_level_time(cls, session, day_date, sleep_level):
-        """Return the time in a given sleep level for a given date."""
+        """Return the time in a given sleep level for a given date.
+        
+        When sleep spans midnight, includes events from the previous day that are part
+        of a continuous sleep session ending on the current day.
+        """
         day_start_ts = datetime.datetime.combine(day_date, datetime.time.min)
         day_stop_ts = datetime.datetime.combine(day_date, datetime.time.max)
+        
+        # First, get events within the current day
         result = cls._s_query(session, cls._time_from_secs(func.sum(cls._secs_from_time(cls.duration))), None, day_start_ts, day_stop_ts,
                               cls._secs_from_time(cls.duration)).filter(cls.event == sleep_level).scalar()
-        return datetime.datetime.strptime(result, '%H:%M:%S').time() if result is not None else datetime.time.min
+        day_total = datetime.datetime.strptime(result, '%H:%M:%S').time() if result is not None else datetime.time.min
+        
+        # Check if there are sleep events at the start of the day that might be part of
+        # a sleep session that started the previous day. Look for events in the first
+        # few hours of the day (before 6 AM) that could be continuation of previous night's sleep.
+        early_morning_end = day_start_ts + datetime.timedelta(hours=6)
+        first_event = cls.s_get_col_min(session, cls.timestamp, day_start_ts, early_morning_end)
+        
+        if first_event is not None:
+            # If there are early morning events, check if there are events from the previous day
+            # that are part of the same sleep session (within 12 hours before the first event)
+            prev_day_start = first_event - datetime.timedelta(hours=12)
+            prev_day_end = day_start_ts
+            
+            # Get events from previous day that are part of this sleep session
+            prev_result = cls._s_query(session, cls._time_from_secs(func.sum(cls._secs_from_time(cls.duration))), None, prev_day_start, prev_day_end,
+                                      cls._secs_from_time(cls.duration)).filter(cls.event == sleep_level).scalar()
+            if prev_result:
+                prev_total = datetime.datetime.strptime(prev_result, '%H:%M:%S').time()
+                # Add the previous day's sleep to the current day's total
+                day_total = fitfile.conversions.add_time(day_total, prev_total)
+        
+        return day_total
 
     @classmethod
     def get_day_stats(cls, session, day_date):
