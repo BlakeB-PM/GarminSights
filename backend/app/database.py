@@ -44,10 +44,26 @@ CREATE TABLE IF NOT EXISTS dailies (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     date DATE UNIQUE NOT NULL,
     steps INTEGER,
+    distance_meters REAL,
+    active_calories INTEGER,
+    calories_total INTEGER,
+    calories_bmr INTEGER,
     body_battery_high INTEGER,
     body_battery_low INTEGER,
+    body_battery_charged INTEGER,
+    body_battery_drained INTEGER,
     stress_average INTEGER,
-    calories_total INTEGER,
+    stress_high INTEGER,
+    stress_low INTEGER,
+    rest_stress_duration INTEGER,
+    activity_stress_duration INTEGER,
+    intensity_minutes_moderate INTEGER,
+    intensity_minutes_vigorous INTEGER,
+    intensity_minutes_goal INTEGER,
+    avg_heart_rate INTEGER,
+    max_heart_rate INTEGER,
+    min_heart_rate INTEGER,
+    resting_heart_rate INTEGER,
     raw_json TEXT
 );
 
@@ -92,7 +108,7 @@ def get_db() -> Generator[sqlite3.Connection, None, None]:
 
 
 def init_db() -> None:
-    """Initialize the database with the schema."""
+    """Initialize the database with the schema and run migrations."""
     db_path = get_database_path()
     
     # Ensure parent directory exists
@@ -105,6 +121,10 @@ def init_db() -> None:
         print(f"Database initialized at {db_path}")
     finally:
         conn.close()
+    
+    # Run migrations after schema initialization
+    from app.migrations import run_migrations
+    run_migrations()
 
 
 def execute_query(query: str, params: tuple = ()) -> list[dict]:

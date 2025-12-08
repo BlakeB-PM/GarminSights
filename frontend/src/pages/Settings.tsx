@@ -236,34 +236,85 @@ export function Settings() {
             
             {syncStatus && (
               <div className={`p-4 rounded-lg border ${
-                syncStatus.success
+                syncStatus.success && (syncStatus.activities_synced > 0 || syncStatus.sleep_days_synced > 0 || syncStatus.dailies_synced > 0)
                   ? 'bg-success/10 border-success/30'
+                  : syncStatus.success
+                  ? 'bg-warning/10 border-warning/30'
                   : 'bg-danger/10 border-danger/30'
               }`}>
                 {syncStatus.success ? (
-                  <div className="space-y-2">
-                    <p className="text-success font-medium">Sync Complete!</p>
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <p className="text-gray-400">Activities</p>
-                        <p className="text-gray-100 font-mono">{syncStatus.activities_synced}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-400">Strength Sets</p>
-                        <p className="text-gray-100 font-mono">{syncStatus.strength_sets_extracted}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-400">Sleep Days</p>
-                        <p className="text-gray-100 font-mono">{syncStatus.sleep_days_synced}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-400">Daily Metrics</p>
-                        <p className="text-gray-100 font-mono">{syncStatus.dailies_synced}</p>
-                      </div>
-                    </div>
+                  <div className="space-y-3">
+                    {syncStatus.activities_synced === 0 && syncStatus.sleep_days_synced === 0 && syncStatus.dailies_synced === 0 ? (
+                      <>
+                        <p className="text-warning font-medium">Sync Complete - No New Data</p>
+                        {syncStatus.warnings && syncStatus.warnings.length > 0 ? (
+                          <div className="space-y-1">
+                            {syncStatus.warnings.map((warning, idx) => (
+                              <p key={idx} className="text-sm text-warning">{warning}</p>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-gray-400">
+                            All data appears to be up to date for the last 30 days.
+                          </p>
+                        )}
+                        {syncStatus.error && (
+                          <p className="text-sm text-danger mt-2">Error: {syncStatus.error}</p>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-success font-medium">Sync Complete!</p>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <p className="text-gray-400">Activities</p>
+                            <p className="text-gray-100 font-mono">{syncStatus.activities_synced}</p>
+                          </div>
+                          <div>
+                            <p className="text-gray-400">Strength Sets</p>
+                            <p className="text-gray-100 font-mono">{syncStatus.strength_sets_extracted}</p>
+                          </div>
+                          <div>
+                            <p className="text-gray-400">Sleep Days</p>
+                            <p className="text-gray-100 font-mono">{syncStatus.sleep_days_synced}</p>
+                          </div>
+                          <div>
+                            <p className="text-gray-400">Daily Metrics</p>
+                            <p className="text-gray-100 font-mono">{syncStatus.dailies_synced}</p>
+                          </div>
+                        </div>
+                        {syncStatus.warnings && syncStatus.warnings.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-warning/20">
+                            <p className="text-xs text-warning font-medium mb-1">Warnings:</p>
+                            {syncStatus.warnings.map((warning, idx) => (
+                              <p key={idx} className="text-xs text-warning">{warning}</p>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
                 ) : (
-                  <p className="text-danger">{syncStatus.error || 'Sync failed'}</p>
+                  <div className="space-y-2">
+                    <p className="text-danger font-medium">Sync Failed</p>
+                    <p className="text-sm text-danger">{syncStatus.error || 'Unknown error occurred'}</p>
+                    {syncStatus.details && Object.keys(syncStatus.details).length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-danger/20">
+                        <p className="text-xs text-gray-400 mb-1">Details:</p>
+                        <pre className="text-xs text-gray-500 bg-background p-2 rounded overflow-x-auto">
+                          {JSON.stringify(syncStatus.details, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+                    {syncStatus.warnings && syncStatus.warnings.length > 0 && (
+                      <div className="mt-2">
+                        <p className="text-xs text-warning font-medium mb-1">Additional warnings:</p>
+                        {syncStatus.warnings.map((warning, idx) => (
+                          <p key={idx} className="text-xs text-warning">{warning}</p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             )}

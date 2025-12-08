@@ -22,6 +22,7 @@ const queryClient = new QueryClient({
 
 function AppLayout() {
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   const handleSync = async () => {
     setIsSyncing(true);
@@ -38,10 +39,15 @@ function AppLayout() {
 
   return (
     <div className="min-h-screen">
-      <Sidebar onSync={handleSync} isSyncing={isSyncing} />
+      <Sidebar 
+        onSync={handleSync} 
+        isSyncing={isSyncing}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+      />
       
       {/* Main Content */}
-      <main className="ml-64 p-6">
+      <main className={`transition-all duration-300 p-6 ${isSidebarCollapsed ? 'ml-16' : 'ml-64'}`}>
         <div className="max-w-7xl mx-auto">
           <Routes>
             <Route path="/" element={<Dashboard />} />

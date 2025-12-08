@@ -15,7 +15,7 @@ class ActivityBase(BaseModel):
     activity_type: Optional[str] = None
     name: Optional[str] = None
     start_time: Optional[datetime] = None
-    duration_seconds: Optional[int] = None
+    duration_seconds: Optional[float] = None  # Float to handle Garmin's precise durations
     distance_meters: Optional[float] = None
     calories: Optional[int] = None
 
@@ -76,10 +76,26 @@ class DailyBase(BaseModel):
     """Base daily metrics fields."""
     date: date
     steps: Optional[int] = None
+    distance_meters: Optional[float] = None
+    active_calories: Optional[int] = None
+    calories_total: Optional[int] = None
+    calories_bmr: Optional[int] = None
     body_battery_high: Optional[int] = None
     body_battery_low: Optional[int] = None
+    body_battery_charged: Optional[int] = None
+    body_battery_drained: Optional[int] = None
     stress_average: Optional[int] = None
-    calories_total: Optional[int] = None
+    stress_high: Optional[int] = None
+    stress_low: Optional[int] = None
+    rest_stress_duration: Optional[int] = None
+    activity_stress_duration: Optional[int] = None
+    intensity_minutes_moderate: Optional[int] = None
+    intensity_minutes_vigorous: Optional[int] = None
+    intensity_minutes_goal: Optional[int] = None
+    avg_heart_rate: Optional[int] = None
+    max_heart_rate: Optional[int] = None
+    min_heart_rate: Optional[int] = None
+    resting_heart_rate: Optional[int] = None
 
 
 class DailyCreate(DailyBase):
@@ -159,6 +175,8 @@ class SyncStatus(BaseModel):
     dailies_synced: int = 0
     strength_sets_extracted: int = 0
     error: Optional[str] = None
+    warnings: list[str] = []
+    details: dict = {}
 
 
 # ============================================

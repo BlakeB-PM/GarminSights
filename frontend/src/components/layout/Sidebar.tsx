@@ -7,6 +7,8 @@ import {
   Settings,
   RefreshCw,
   Table2,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
@@ -21,21 +23,39 @@ const navItems = [
 interface SidebarProps {
   onSync?: () => void;
   isSyncing?: boolean;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
-export function Sidebar({ onSync, isSyncing }: SidebarProps) {
+export function Sidebar({ onSync, isSyncing, isCollapsed = false, onToggleCollapse }: SidebarProps) {
   return (
-    <aside className="fixed left-0 top-0 h-full w-64 bg-card/50 backdrop-blur-sm border-r border-card-border flex flex-col z-40">
+    <aside className={cn(
+      "fixed left-0 top-0 h-full bg-card/50 backdrop-blur-sm border-r border-card-border flex flex-col z-40 transition-all duration-300",
+      isCollapsed ? "w-16" : "w-64"
+    )}>
       {/* Logo */}
-      <div className="p-6 border-b border-card-border">
+      <div className="p-4 border-b border-card-border">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-accent-dark flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-accent-dark flex items-center justify-center flex-shrink-0">
             <Activity className="w-6 h-6 text-white" />
           </div>
-          <div>
-            <h1 className="text-lg font-bold text-gray-100">GarminSights</h1>
-            <p className="text-xs text-gray-500">Fitness Analytics</p>
-          </div>
+          {!isCollapsed && (
+            <div className="min-w-0 flex-1">
+              <h1 className="text-lg font-bold text-gray-100">GarminSights</h1>
+              <p className="text-xs text-gray-500">Fitness Analytics</p>
+            </div>
+          )}
+          <button
+            onClick={onToggleCollapse}
+            className="ml-auto p-1.5 rounded-lg hover:bg-card transition-colors text-gray-400 hover:text-gray-100 flex-shrink-0"
+            title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {isCollapsed ? (
+              <ChevronRight className="w-5 h-5" />
+            ) : (
+              <ChevronLeft className="w-5 h-5" />
+            )}
+          </button>
         </div>
       </div>
 
@@ -46,11 +66,16 @@ export function Sidebar({ onSync, isSyncing }: SidebarProps) {
             key={to}
             to={to}
             className={({ isActive }) =>
-              cn('sidebar-link', isActive && 'active')
+              cn(
+                'sidebar-link',
+                isActive && 'active',
+                isCollapsed && 'justify-center'
+              )
             }
+            title={isCollapsed ? label : undefined}
           >
-            <Icon className="w-5 h-5" />
-            <span>{label}</span>
+            <Icon className="w-5 h-5 flex-shrink-0" />
+            {!isCollapsed && <span>{label}</span>}
           </NavLink>
         ))}
       </nav>
@@ -62,21 +87,28 @@ export function Sidebar({ onSync, isSyncing }: SidebarProps) {
           disabled={isSyncing}
           className={cn(
             'sidebar-link w-full',
-            isSyncing && 'opacity-50 cursor-not-allowed'
+            isSyncing && 'opacity-50 cursor-not-allowed',
+            isCollapsed && 'justify-center'
           )}
+          title={isCollapsed ? (isSyncing ? 'Syncing...' : 'Sync Data') : undefined}
         >
-          <RefreshCw className={cn('w-5 h-5', isSyncing && 'animate-spin')} />
-          <span>{isSyncing ? 'Syncing...' : 'Sync Data'}</span>
+          <RefreshCw className={cn('w-5 h-5 flex-shrink-0', isSyncing && 'animate-spin')} />
+          {!isCollapsed && <span>{isSyncing ? 'Syncing...' : 'Sync Data'}</span>}
         </button>
         
         <NavLink
           to="/settings"
           className={({ isActive }) =>
-            cn('sidebar-link', isActive && 'active')
+            cn(
+              'sidebar-link',
+              isActive && 'active',
+              isCollapsed && 'justify-center'
+            )
           }
+          title={isCollapsed ? 'Settings' : undefined}
         >
-          <Settings className="w-5 h-5" />
-          <span>Settings</span>
+          <Settings className="w-5 h-5 flex-shrink-0" />
+          {!isCollapsed && <span>Settings</span>}
         </NavLink>
       </div>
     </aside>
