@@ -136,3 +136,32 @@ async def sync_dailies_only(days_back: int = 30):
     except Exception as e:
         return SyncStatus(success=False, error=str(e))
 
+
+@router.post("/backfill-strength")
+async def backfill_strength_data():
+    """
+    Backfill strength training details for existing activities.
+    
+    This fetches detailed exercise data (sets, reps, weight) for 
+    strength training activities that don't have this data yet.
+    """
+    garmin = get_garmin_service()
+    if not garmin.check_session():
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    sync_service = get_sync_service()
+    
+    try:
+        activities_processed, sets_extracted = sync_service.backfill_strength_details()
+        return {
+            "success": True,
+            "activities_processed": activities_processed,
+            "sets_extracted": sets_extracted
+        }
+    except Exception as e:
+        logger.error(f"Backfill strength error: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e)
+        }
+

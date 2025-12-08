@@ -193,6 +193,28 @@ class GarminService:
             logger.error(f"Failed to fetch activity details: {e}")
             return None
     
+    def fetch_exercise_sets(self, activity_id: str) -> Optional[dict]:
+        """
+        Fetch exercise sets for a strength training activity.
+        
+        This returns detailed set data including exercises, reps, and weights.
+        
+        Args:
+            activity_id: Garmin activity ID
+            
+        Returns:
+            Exercise sets data with sets, reps, weights, and exercise names
+        """
+        if not self._client:
+            logger.error("Not logged in")
+            return None
+        
+        try:
+            return self._client.get_activity_exercise_sets(activity_id)
+        except Exception as e:
+            logger.error(f"Failed to fetch exercise sets for {activity_id}: {e}")
+            return None
+    
     def fetch_sleep(self, date_str: str) -> Optional[dict]:
         """
         Fetch sleep data for a specific date.

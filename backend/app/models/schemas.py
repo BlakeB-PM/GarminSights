@@ -122,7 +122,7 @@ class StrengthSetBase(BaseModel):
     set_number: Optional[int] = None
     reps: Optional[int] = None
     weight_kg: Optional[float] = None
-    duration_seconds: Optional[int] = None
+    duration_seconds: Optional[float] = None  # Float for precise duration
 
 
 class StrengthSetCreate(StrengthSetBase):

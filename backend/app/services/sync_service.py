@@ -223,7 +223,8 @@ class SyncService:
         """
         Perform deep fetch for strength training activity.
         
-        Fetches detailed exercise data including sets, reps, and weights.
+        Fetches detailed exercise data including sets, reps, and weights
+        using the exercise_sets API endpoint.
         
         Args:
             activity_id: Local database activity ID
@@ -233,24 +234,62 @@ class SyncService:
             Number of strength sets extracted
         """
         try:
-            details = self._garmin.fetch_activity_details(garmin_id)
-            if not details:
+            # Use the dedicated exercise sets endpoint
+            exercise_data = self._garmin.fetch_exercise_sets(garmin_id)
+            if not exercise_data:
+                logger.debug(f"No exercise sets data for {garmin_id}")
                 return 0
             
-            # Update activity with full details
+            exercise_sets = exercise_data.get("exerciseSets", [])
+            if not exercise_sets:
+                logger.debug(f"Empty exercise sets for {garmin_id}")
+                return 0
+            
+            # Update activity with exercise data
             execute_write(
                 "UPDATE activities SET raw_json = ? WHERE id = ?",
-                (json.dumps(details), activity_id)
+                (json.dumps(exercise_data), activity_id)
             )
             
-            # Extract strength sets
-            sets_data = self._extract_strength_sets(details)
-            
-            if not sets_data:
-                return 0
-            
-            # Insert strength sets
-            for set_num, exercise_set in enumerate(sets_data, 1):
+            # Process and insert each ACTIVE set (skip REST periods)
+            sets_inserted = 0
+            for set_num, exercise_set in enumerate(exercise_sets, 1):
+                set_type = exercise_set.get("setType", "")
+                
+                # Skip rest periods and warmup cardio
+                if set_type == "REST":
+                    continue
+                
+                # Get exercise name from exercises array
+                exercises = exercise_set.get("exercises", [])
+                exercise_name = "Unknown"
+                exercise_category = "Unknown"
+                
+                if exercises:
+                    # Use the first exercise's name/category
+                    first_exercise = exercises[0]
+                    exercise_name = first_exercise.get("name") or first_exercise.get("category", "Unknown")
+                    exercise_category = first_exercise.get("category", "Unknown")
+                    
+                    # Format name nicely (ROMANIAN_DEADLIFT -> Romanian Deadlift)
+                    if exercise_name and exercise_name != "Unknown":
+                        exercise_name = exercise_name.replace("_", " ").title()
+                    elif exercise_category and exercise_category != "Unknown":
+                        exercise_name = exercise_category.replace("_", " ").title()
+                
+                reps = exercise_set.get("repetitionCount")
+                weight_raw = exercise_set.get("weight")
+                duration = exercise_set.get("duration")
+                
+                # Weight appears to be in milligrams, convert to kg
+                weight_kg = None
+                if weight_raw and weight_raw > 0:
+                    weight_kg = weight_raw / 1000.0  # Convert mg to kg
+                
+                # Skip warmup cardio sets (no reps, no meaningful data)
+                if exercise_category == "CARDIO" and not reps:
+                    continue
+                
                 execute_write(
                     """INSERT INTO strength_sets 
                        (activity_id, exercise_name, set_number, reps, weight_kg, 
@@ -258,66 +297,71 @@ class SyncService:
                        VALUES (?, ?, ?, ?, ?, ?, ?)""",
                     (
                         activity_id,
-                        exercise_set.get("exerciseName"),
-                        set_num,
-                        exercise_set.get("reps"),
-                        exercise_set.get("weight"),
-                        exercise_set.get("duration"),
+                        exercise_name,
+                        sets_inserted + 1,  # Use actual set number (1-indexed)
+                        reps,
+                        weight_kg,
+                        duration,
                         json.dumps(exercise_set)
                     )
                 )
+                sets_inserted += 1
             
-            logger.info(f"Extracted {len(sets_data)} sets from activity {garmin_id}")
-            return len(sets_data)
+            if sets_inserted > 0:
+                logger.info(f"Extracted {sets_inserted} sets from activity {garmin_id}")
+            return sets_inserted
             
         except Exception as e:
-            logger.error(f"Deep fetch failed for {garmin_id}: {e}")
+            logger.error(f"Deep fetch failed for {garmin_id}: {e}", exc_info=True)
             return 0
     
-    def _extract_strength_sets(self, details: dict) -> list[dict]:
+    def backfill_strength_details(self) -> tuple[int, int]:
         """
-        Extract strength sets from activity details.
+        Backfill strength training details for existing activities.
         
-        Garmin stores exercise data in different fields depending on the format.
-        We check multiple possible locations.
+        Finds strength training activities without sets and performs deep fetch.
+        
+        Returns:
+            Tuple of (activities_processed, sets_extracted)
         """
-        sets = []
+        # Find strength activities without sets
+        activities = execute_query(
+            """
+            SELECT a.id, a.garmin_id, a.name
+            FROM activities a
+            WHERE a.activity_type = 'strength_training'
+            AND NOT EXISTS (
+                SELECT 1 FROM strength_sets s WHERE s.activity_id = a.id
+            )
+            ORDER BY a.start_time DESC
+            LIMIT 50
+            """
+        )
         
-        # Try summarizedExerciseSets (common format)
-        summarized = details.get("summarizedExerciseSets", [])
-        for exercise in summarized:
-            exercise_name = exercise.get("exerciseName") or exercise.get("category", "Unknown")
+        if not activities:
+            logger.info("No strength activities need backfilling")
+            return 0, 0
+        
+        logger.info(f"Found {len(activities)} strength activities to backfill")
+        
+        total_sets = 0
+        processed = 0
+        
+        for activity in activities:
+            activity_id = activity["id"]
+            garmin_id = activity["garmin_id"]
+            name = activity.get("name", "Unknown")
             
-            # Each exercise may have multiple sets
-            exercise_sets = exercise.get("sets", [])
-            if exercise_sets:
-                for s in exercise_sets:
-                    sets.append({
-                        "exerciseName": exercise_name,
-                        "reps": s.get("repetitionCount") or s.get("reps"),
-                        "weight": s.get("weight"),
-                        "duration": s.get("duration")
-                    })
-            else:
-                # Single set format
-                sets.append({
-                    "exerciseName": exercise_name,
-                    "reps": exercise.get("reps") or exercise.get("repetitionCount"),
-                    "weight": exercise.get("weight"),
-                    "duration": exercise.get("duration")
-                })
+            logger.info(f"Deep fetching strength data for: {name} (ID: {garmin_id})")
+            
+            sets_count = self._deep_fetch_strength(activity_id, garmin_id)
+            total_sets += sets_count
+            processed += 1
+            
+            logger.info(f"  -> Extracted {sets_count} sets")
         
-        # Also try activityDetailMetrics or exerciseSets
-        exercise_sets = details.get("exerciseSets", [])
-        for exercise in exercise_sets:
-            sets.append({
-                "exerciseName": exercise.get("exerciseName") or exercise.get("name", "Unknown"),
-                "reps": exercise.get("repetitions") or exercise.get("reps"),
-                "weight": exercise.get("weight"),
-                "duration": exercise.get("duration")
-            })
-        
-        return sets
+        logger.info(f"Backfill complete: {processed} activities, {total_sets} total sets")
+        return processed, total_sets
     
     def sync_sleep(self, days_back: int = 30) -> int:
         """
