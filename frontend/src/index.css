@@ -1,0 +1,95 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+:root {
+    --background: #0a0a0f;
+    --card: #12121a;
+    --card-border: #1e1e2e;
+    --accent: #0ea5e9;
+}
+
+body {
+    @apply bg-background text-gray-100 font-sans antialiased;
+    background: linear-gradient(135deg, #0a0a0f 0%, #0d0d15 50%, #0a0a0f 100%);
+  min-height: 100vh;
+}
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+  ::-webkit-scrollbar-track {
+    @apply bg-background;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-card-border rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-600;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-card/80 backdrop-blur-sm border border-card-border rounded-xl;
+  }
+
+  .stat-card {
+    @apply glass-card p-6 hover:border-accent/30 transition-colors duration-200;
+  }
+
+  .btn-primary {
+    @apply bg-accent hover:bg-accent-light text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200;
+  }
+
+  .btn-secondary {
+    @apply bg-card hover:bg-card-border text-gray-100 font-medium px-4 py-2 rounded-lg border border-card-border transition-colors duration-200;
+}
+
+  .input-field {
+    @apply bg-card border border-card-border rounded-lg px-4 py-2 text-gray-100 placeholder-gray-500 focus:outline-none focus:border-accent transition-colors;
+  }
+
+  .sidebar-link {
+    @apply flex items-center gap-3 px-4 py-3 rounded-lg text-gray-400 hover:text-gray-100 hover:bg-card transition-colors duration-200;
+}
+
+  .sidebar-link.active {
+    @apply text-accent bg-accent/10 border-l-2 border-accent;
+  }
+
+  .chart-container {
+    @apply glass-card p-6;
+  }
+
+  .page-title {
+    @apply text-2xl font-bold text-gray-100 mb-2;
+  }
+
+  .page-subtitle {
+    @apply text-gray-400 mb-6;
+  }
+}
+
+/* Recharts customizations */
+.recharts-cartesian-grid-horizontal line,
+.recharts-cartesian-grid-vertical line {
+  stroke: #1e1e2e;
+}
+
+.recharts-text {
+  fill: #9ca3af;
+  font-family: 'Inter', sans-serif;
+  }
+
+.recharts-tooltip-wrapper {
+  outline: none;
+}
