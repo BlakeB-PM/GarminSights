@@ -41,14 +41,22 @@ export function Settings() {
     setLoggingIn(true);
     try {
       // Use entered credentials or fall back to env
-      const status = await login(email || undefined, password || undefined);
+      // Only pass credentials if they're actually provided (not empty strings)
+      const status = await login(
+        email && email.trim() ? email.trim() : undefined, 
+        password && password.trim() ? password.trim() : undefined
+      );
       setAuthStatus(status);
       if (status.authenticated) {
         setShowCredentialForm(false);
         setPassword(''); // Clear password from memory
+        setEmail(''); // Clear email too
       }
-    } catch (error) {
-      setAuthStatus({ authenticated: false, error: 'Login failed. Check credentials.' });
+    } catch (error: any) {
+      setAuthStatus({ 
+        authenticated: false, 
+        error: error?.message || 'Login failed. Check credentials.' 
+      });
     } finally {
       setLoggingIn(false);
     }

@@ -33,7 +33,58 @@ class Activity(ActivityBase):
         from_attributes = True
 
 
-class ActivityWithSets(Activity):
+class HeartRateMetrics(BaseModel):
+    """Heart rate metrics for an activity."""
+    avg: Optional[int] = None
+    max: Optional[int] = None
+    min: Optional[int] = None
+    resting: Optional[int] = None
+
+
+class TrainingMetrics(BaseModel):
+    """Training effect and performance metrics."""
+    aerobic_effect: Optional[float] = None
+    anaerobic_effect: Optional[float] = None
+    vo2_max: Optional[float] = None
+    recovery_time: Optional[int] = None  # seconds
+    training_effect_label: Optional[str] = None
+    performance_condition: Optional[int] = None
+
+
+class ActivityDetails(Activity):
+    """Activity with all available parsed metrics."""
+    # Elevation
+    elevation_gain: Optional[float] = None  # meters
+    elevation_loss: Optional[float] = None  # meters
+    
+    # Speed/Pace
+    average_speed: Optional[float] = None  # m/s
+    max_speed: Optional[float] = None  # m/s
+    elapsed_duration: Optional[float] = None  # seconds
+    moving_duration: Optional[float] = None  # seconds
+    
+    # Heart Rate
+    heart_rate: Optional[HeartRateMetrics] = None
+    
+    # Training
+    training: Optional[TrainingMetrics] = None
+    
+    # Performance metrics
+    cadence: Optional[int] = None  # steps/min or rev/min
+    stride_length: Optional[float] = None  # meters
+    average_power: Optional[float] = None  # watts
+    max_power: Optional[float] = None  # watts
+    normalized_power: Optional[float] = None  # watts
+    
+    # Splits and laps
+    splits: Optional[list[dict]] = None
+    laps: Optional[list[dict]] = None
+    
+    class Config:
+        from_attributes = True
+
+
+class ActivityWithSets(ActivityDetails):
     """Activity with strength sets included."""
     strength_sets: list["StrengthSet"] = []
 
@@ -218,6 +269,62 @@ class ExerciseProgress(BaseModel):
 class ExerciseList(BaseModel):
     """List of exercises."""
     exercises: list[str]
+
+
+# ============================================
+# Strength Lab Views Schemas
+# ============================================
+
+class KeyLiftCard(BaseModel):
+    """Key lift progress card data."""
+    exercise_name: str
+    best_recent_weight: Optional[float] = None
+    best_recent_reps: Optional[int] = None
+    estimated_1rm: Optional[float] = None
+    four_week_trend_lbs: Optional[float] = None  # Change in estimated 1RM
+    four_week_trend_percent: Optional[float] = None
+    volume_trend_percent: Optional[float] = None  # Volume change vs 4-week avg
+    last_trained_date: Optional[date] = None
+    days_since_last: Optional[int] = None
+    status: str = "stable"  # "progress", "stable", "plateau", "declining"
+
+
+class TrainingBalanceData(BaseModel):
+    """Training balance data for a week."""
+    week_start: date
+    week_end: date
+    strength_sessions: int = 0
+    cardio_sessions: int = 0
+    zone2_sessions: int = 0
+    vo2_sessions: int = 0
+    strength_minutes: int = 0
+    zone2_minutes: int = 0
+    vo2_minutes: int = 0
+
+
+class MuscleFrequency(BaseModel):
+    """Muscle group frequency data."""
+    muscle_group: str
+    avg_sessions_per_week: float = 0.0
+    days_since_last: Optional[int] = None
+    total_sets: int = 0
+    total_volume: float = 0.0
+
+
+class VolumeTrendData(BaseModel):
+    """Volume trend data for a week."""
+    week_start: date
+    week_end: date
+    total_tonnage: float = 0.0  # weight × reps × sets
+    total_sets: int = 0
+    week_over_week_delta_percent: Optional[float] = None
+
+
+class MuscleComparisonData(BaseModel):
+    """Muscle comparison data for a week."""
+    week_start: date
+    week_end: date
+    muscle_groups: dict[str, int] = {}  # muscle_group -> sets per week
 
 
 # ============================================

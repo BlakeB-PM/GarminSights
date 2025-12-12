@@ -7,11 +7,15 @@ from fastapi import APIRouter, Query
 from app.database import execute_query
 from app.models.schemas import (
     Activity, 
-    ActivityWithSets, 
+    ActivityWithSets,
+    ActivityDetails,
+    HeartRateMetrics,
+    TrainingMetrics,
     StrengthSet,
     DashboardSummary,
     ActivityHeatmapDay
 )
+from app.services.activity_parser import parse_activity_data
 
 router = APIRouter(prefix="/api/activities", tags=["activities"])
 
@@ -119,7 +123,7 @@ async def get_activity_heatmap(days: int = Query(30, ge=7, le=90)):
 
 @router.get("/{activity_id}", response_model=ActivityWithSets)
 async def get_activity(activity_id: int):
-    """Get a single activity with its strength sets if applicable."""
+    """Get a single activity with all available metrics and strength sets if applicable."""
     activities = execute_query(
         "SELECT * FROM activities WHERE id = ?",
         (activity_id,)
@@ -129,6 +133,26 @@ async def get_activity(activity_id: int):
         return {"error": "Activity not found"}
     
     activity = activities[0]
+    
+    # Parse raw_json to extract all available metrics
+    raw_json = activity.get("raw_json")
+    parsed_metrics = parse_activity_data(raw_json)
+    
+    # Convert nested dictionaries to Pydantic models if present
+    heart_rate_dict = parsed_metrics.pop("heart_rate", None)
+    if heart_rate_dict and isinstance(heart_rate_dict, dict):
+        activity["heart_rate"] = HeartRateMetrics(**heart_rate_dict)
+    else:
+        activity["heart_rate"] = None
+    
+    training_dict = parsed_metrics.pop("training", None)
+    if training_dict and isinstance(training_dict, dict):
+        activity["training"] = TrainingMetrics(**training_dict)
+    else:
+        activity["training"] = None
+    
+    # Merge remaining parsed metrics into activity dict
+    activity.update(parsed_metrics)
     
     # Get strength sets if any
     sets = execute_query(

@@ -42,8 +42,30 @@ async def login(request: LoginRequest = None):
             )
         
         # Login with provided or env credentials
-        email = request.email if request else None
-        password = request.password if request else None
+        from app.config import settings
+        
+        # Extract credentials from request (handle both None request and None fields)
+        email = None
+        password = None
+        if request:
+            email = request.email if request.email else None
+            password = request.password if request.password else None
+        
+        logger.info(f"Login request received - email provided: {bool(email)}, password provided: {bool(password)}, request object: {request is not None}")
+        
+        # Use env credentials if request credentials not provided
+        if not email:
+            email = settings.garmin_email
+        if not password:
+            password = settings.garmin_password
+        
+        # Check if we have credentials (either from request or env)
+        if not email or not password:
+            logger.warning("No credentials available - neither from request nor env")
+            return AuthStatus(
+                authenticated=False,
+                error="No credentials provided. Please enter email/password or set GARMIN_EMAIL and GARMIN_PASSWORD in .env file."
+            )
         
         logger.info(f"Attempting login for email: {email}")
         
@@ -53,9 +75,10 @@ async def login(request: LoginRequest = None):
                 username=garmin.username
             )
         
+        logger.warning(f"Login failed for email: {email}")
         return AuthStatus(
             authenticated=False,
-            error="Login failed. Check credentials."
+            error="Login failed. Check your email and password, or verify your Garmin account credentials."
         )
     except Exception as e:
         logger.exception(f"Login error: {e}")

@@ -22,9 +22,9 @@ import {
   getActivityDetails,
   type SleepData,
   type DailyData,
-  type Activity as ActivityType,
-  type StrengthSet
+  type Activity as ActivityType
 } from '../lib/api';
+import { ActivityDetailView } from '../components/activities/ActivityDetailView';
 import { formatDuration, cn } from '../lib/utils';
 
 interface DayRecord {
@@ -46,29 +46,44 @@ export function DataViewer() {
     loadData();
   }, [daysToShow]);
 
-  // Load activity details (with strength sets) when day is selected
+  // Load activity details for all activities when day is selected
   useEffect(() => {
-    if (selectedDay) {
-      // Load details for strength training activities
-      selectedDay.activities.forEach(async (activity) => {
-        if (activity.activity_type === 'strength_training' && !activityDetails[activity.id]) {
-          setLoadingDetails(prev => new Set([...prev, activity.id]));
-          try {
-            const details = await getActivityDetails(activity.id);
-            setActivityDetails(prev => ({ ...prev, [activity.id]: details }));
-          } catch (error) {
-            console.error(`Failed to load details for activity ${activity.id}:`, error);
-          } finally {
-            setLoadingDetails(prev => {
-              const next = new Set(prev);
-              next.delete(activity.id);
-              return next;
-            });
-          }
-        }
-      });
+    if (!selectedDay || selectedDay.activities.length === 0) {
+      setActivityDetails({});
+      setLoadingDetails(new Set());
+      return;
     }
-  }, [selectedDay]);
+    
+    // Clear previous loading state
+    setLoadingDetails(new Set());
+    
+    // Load details for all activities in parallel
+    const activityIds = selectedDay.activities.map(a => a.id);
+    const loadPromises = activityIds.map(async (activityId) => {
+      // Mark as loading
+      setLoadingDetails(prev => new Set([...prev, activityId]));
+      
+      try {
+        const details = await getActivityDetails(activityId);
+        setActivityDetails(prev => ({ ...prev, [activityId]: details }));
+      } catch (error) {
+        console.error(`Failed to load details for activity ${activityId}:`, error);
+      } finally {
+        setLoadingDetails(prev => {
+          const next = new Set(prev);
+          next.delete(activityId);
+          return next;
+        });
+      }
+    });
+    
+    // Execute all loads in parallel
+    Promise.all(loadPromises).catch(error => {
+      console.error('Error loading activity details:', error);
+    });
+    
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDay?.date]); // Only depend on the date, not the entire selectedDay object
 
   async function loadData() {
     setLoading(true);
@@ -462,18 +477,17 @@ export function DataViewer() {
                   Activities ({selectedDay.activities.length})
                 </h3>
                 {selectedDay.activities.length > 0 ? (
-                  <div className="space-y-4">
+                  <div className="space-y-6">
                     {selectedDay.activities.map((activity) => {
                       const details = activityDetails[activity.id];
                       const isLoading = loadingDetails.has(activity.id);
-                      const strengthSets = details?.strength_sets || [];
                       
                       return (
                         <div 
                           key={activity.id}
                           className="p-4 bg-background rounded-lg border border-card-border"
                         >
-                          <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center justify-between mb-4">
                             <span className="font-medium text-lg">
                               {activity.name || activity.activity_type?.replace(/_/g, ' ')}
                             </span>
@@ -481,67 +495,17 @@ export function DataViewer() {
                               {activity.activity_type?.replace(/_/g, ' ')}
                             </span>
                           </div>
-                          <div className="flex items-center gap-6 text-sm text-gray-400 mb-3">
-                            <span className="flex items-center gap-1">
-                              <Clock className="w-4 h-4" />
-                              {formatDuration(activity.duration_seconds)}
-                            </span>
-                            {activity.calories > 0 && (
-                              <span className="flex items-center gap-1">
-                                <Flame className="w-4 h-4" />
-                                {activity.calories} cal
-                              </span>
-                            )}
-                            {activity.distance_meters > 0 && (
-                              <span>{(activity.distance_meters / 1000).toFixed(2)} km</span>
-                            )}
-                          </div>
                           
-                          {/* Strength Sets */}
-                          {activity.activity_type === 'strength_training' && (
-                            <div className="mt-3 pt-3 border-t border-card-border">
-                              {isLoading ? (
-                                <div className="flex items-center gap-2 text-gray-500">
-                                  <div className="animate-spin w-4 h-4 border-2 border-accent border-t-transparent rounded-full" />
-                                  Loading exercise details...
-                                </div>
-                              ) : strengthSets.length > 0 ? (
-                                <div>
-                                  <h4 className="text-sm font-medium text-gray-300 mb-2">
-                                    Exercise Sets ({strengthSets.length})
-                                  </h4>
-                                  <div className="overflow-x-auto">
-                                    <table className="w-full text-sm">
-                                      <thead>
-                                        <tr className="text-gray-500 text-left">
-                                          <th className="py-1 pr-4">#</th>
-                                          <th className="py-1 pr-4">Exercise</th>
-                                          <th className="py-1 pr-4 text-right">Reps</th>
-                                          <th className="py-1 pr-4 text-right">Weight</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        {strengthSets.map((set) => (
-                                          <tr key={set.id} className="border-t border-card-border/30">
-                                            <td className="py-1.5 pr-4 text-gray-500">{set.set_number}</td>
-                                            <td className="py-1.5 pr-4 font-medium">{set.exercise_name}</td>
-                                            <td className="py-1.5 pr-4 text-right font-mono">
-                                              {set.reps ?? '—'}
-                                            </td>
-                                            <td className="py-1.5 pr-4 text-right font-mono">
-                                              {set.weight_kg 
-                                                ? `${set.weight_kg.toFixed(1)} kg (${(set.weight_kg * 2.205).toFixed(0)} lbs)`
-                                                : '—'}
-                                            </td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                </div>
-                              ) : (
-                                <p className="text-gray-500 text-sm">No exercise sets recorded</p>
-                              )}
+                          {isLoading ? (
+                            <div className="flex items-center justify-center gap-2 text-gray-500 py-8">
+                              <div className="animate-spin w-5 h-5 border-2 border-accent border-t-transparent rounded-full" />
+                              <span>Loading activity details...</span>
+                            </div>
+                          ) : details ? (
+                            <ActivityDetailView activity={details} />
+                          ) : (
+                            <div className="text-gray-500 text-sm">
+                              No activity details available
                             </div>
                           )}
                         </div>

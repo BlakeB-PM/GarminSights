@@ -251,44 +251,46 @@ class SyncService:
                 (json.dumps(exercise_data), activity_id)
             )
             
-            # Process and insert each ACTIVE set (skip REST periods)
+            # Process and insert all sets (including REST periods)
             sets_inserted = 0
             for set_num, exercise_set in enumerate(exercise_sets, 1):
                 set_type = exercise_set.get("setType", "")
-                
-                # Skip rest periods and warmup cardio
-                if set_type == "REST":
-                    continue
-                
-                # Get exercise name from exercises array
-                exercises = exercise_set.get("exercises", [])
-                exercise_name = "Unknown"
-                exercise_category = "Unknown"
-                
-                if exercises:
-                    # Use the first exercise's name/category
-                    first_exercise = exercises[0]
-                    exercise_name = first_exercise.get("name") or first_exercise.get("category", "Unknown")
-                    exercise_category = first_exercise.get("category", "Unknown")
-                    
-                    # Format name nicely (ROMANIAN_DEADLIFT -> Romanian Deadlift)
-                    if exercise_name and exercise_name != "Unknown":
-                        exercise_name = exercise_name.replace("_", " ").title()
-                    elif exercise_category and exercise_category != "Unknown":
-                        exercise_name = exercise_category.replace("_", " ").title()
-                
-                reps = exercise_set.get("repetitionCount")
-                weight_raw = exercise_set.get("weight")
                 duration = exercise_set.get("duration")
                 
-                # Weight appears to be in milligrams, convert to kg
-                weight_kg = None
-                if weight_raw and weight_raw > 0:
-                    weight_kg = weight_raw / 1000.0  # Convert mg to kg
-                
-                # Skip warmup cardio sets (no reps, no meaningful data)
-                if exercise_category == "CARDIO" and not reps:
-                    continue
+                # Handle rest periods
+                if set_type == "REST":
+                    exercise_name = "Rest"
+                    reps = None
+                    weight_kg = None
+                else:
+                    # Get exercise name from exercises array
+                    exercises = exercise_set.get("exercises", [])
+                    exercise_name = "Unknown"
+                    exercise_category = "Unknown"
+                    
+                    if exercises:
+                        # Use the first exercise's name/category
+                        first_exercise = exercises[0]
+                        exercise_name = first_exercise.get("name") or first_exercise.get("category", "Unknown")
+                        exercise_category = first_exercise.get("category", "Unknown")
+                        
+                        # Format name nicely (ROMANIAN_DEADLIFT -> Romanian Deadlift)
+                        if exercise_name and exercise_name != "Unknown":
+                            exercise_name = exercise_name.replace("_", " ").title()
+                        elif exercise_category and exercise_category != "Unknown":
+                            exercise_name = exercise_category.replace("_", " ").title()
+                    
+                    reps = exercise_set.get("repetitionCount")
+                    weight_raw = exercise_set.get("weight")
+                    
+                    # Weight appears to be in milligrams, convert to kg
+                    weight_kg = None
+                    if weight_raw and weight_raw > 0:
+                        weight_kg = weight_raw / 1000.0  # Convert mg to kg
+                    
+                    # Skip warmup cardio sets (no reps, no meaningful data)
+                    if exercise_category == "CARDIO" and not reps:
+                        continue
                 
                 execute_write(
                     """INSERT INTO strength_sets 
@@ -298,7 +300,7 @@ class SyncService:
                     (
                         activity_id,
                         exercise_name,
-                        sets_inserted + 1,  # Use actual set number (1-indexed)
+                        set_num,  # Use actual sequence number including rests
                         reps,
                         weight_kg,
                         duration,
