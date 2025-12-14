@@ -20,6 +20,7 @@ export function Settings() {
   const [showPassword, setShowPassword] = useState(false);
   const [anthropicKey, setAnthropicKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
+  const [selectedDays, setSelectedDays] = useState<number>(30);
 
   useEffect(() => {
     checkAuth();
@@ -71,11 +72,12 @@ export function Settings() {
     }
   };
 
-  const handleSync = async () => {
+  const handleSync = async (daysBack?: number) => {
+    const days = daysBack ?? selectedDays;
     setSyncing(true);
     setSyncStatus(null);
     try {
-      const status = await syncData(30);
+      const status = await syncData(days);
       setSyncStatus(status);
     } catch (error) {
       setSyncStatus({ success: false, error: 'Sync failed', activities_synced: 0, sleep_days_synced: 0, dailies_synced: 0, strength_sets_extracted: 0 });
@@ -225,15 +227,64 @@ export function Settings() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div>
+              <p className="text-gray-100 mb-3">Select Time Range</p>
+              <p className="text-sm text-gray-500 mb-4">
+                Choose how far back to sync your activities, sleep, and wellness data
+              </p>
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                <button
+                  onClick={() => setSelectedDays(30)}
+                  disabled={syncing || !authStatus?.authenticated}
+                  className={`p-3 rounded-lg border transition-all ${
+                    selectedDays === 30
+                      ? 'bg-accent/20 border-accent text-accent'
+                      : 'bg-background border-card-border text-gray-400 hover:border-accent/50'
+                  } ${syncing || !authStatus?.authenticated ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                >
+                  <p className="font-medium">30 Days</p>
+                  <p className="text-xs mt-1">Last month</p>
+                </button>
+                <button
+                  onClick={() => setSelectedDays(180)}
+                  disabled={syncing || !authStatus?.authenticated}
+                  className={`p-3 rounded-lg border transition-all ${
+                    selectedDays === 180
+                      ? 'bg-accent/20 border-accent text-accent'
+                      : 'bg-background border-card-border text-gray-400 hover:border-accent/50'
+                  } ${syncing || !authStatus?.authenticated ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                >
+                  <p className="font-medium">6 Months</p>
+                  <p className="text-xs mt-1">Last half year</p>
+                </button>
+                <button
+                  onClick={() => setSelectedDays(365)}
+                  disabled={syncing || !authStatus?.authenticated}
+                  className={`p-3 rounded-lg border transition-all ${
+                    selectedDays === 365
+                      ? 'bg-accent/20 border-accent text-accent'
+                      : 'bg-background border-card-border text-gray-400 hover:border-accent/50'
+                  } ${syncing || !authStatus?.authenticated ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                >
+                  <p className="font-medium">1 Year</p>
+                  <p className="text-xs mt-1">Full year</p>
+                </button>
+              </div>
+            </div>
+            
+            <div className="flex items-center justify-between pt-2 border-t border-card-border">
               <div>
-                <p className="text-gray-100">Sync Last 30 Days</p>
+                <p className="text-gray-100">
+                  Sync Last {selectedDays === 30 ? '30 Days' : selectedDays === 180 ? '6 Months' : '1 Year'}
+                </p>
                 <p className="text-sm text-gray-500">
-                  Downloads activities, sleep, and wellness data
+                  {selectedDays === 30 && 'Downloads recent activities, sleep, and wellness data'}
+                  {selectedDays === 180 && 'Downloads activities, sleep, and wellness data from the past 6 months'}
+                  {selectedDays === 365 && 'Downloads activities, sleep, and wellness data from the past year'}
                 </p>
               </div>
               <Button
-                onClick={handleSync}
+                onClick={() => handleSync()}
                 isLoading={syncing}
                 disabled={!authStatus?.authenticated}
               >
@@ -263,7 +314,7 @@ export function Settings() {
                           </div>
                         ) : (
                           <p className="text-sm text-gray-400">
-                            All data appears to be up to date for the last 30 days.
+                            All data appears to be up to date for the selected time range.
                           </p>
                         )}
                         {syncStatus.error && (

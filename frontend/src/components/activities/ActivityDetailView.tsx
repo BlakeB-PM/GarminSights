@@ -1,5 +1,5 @@
 import type { Activity } from '../../lib/api';
-import { formatDuration, cn } from '../../lib/utils';
+import { formatDuration, cn, formatDistanceDual, formatPaceDual, formatSpeedDual, formatElevationDual, formatStrideLengthDual } from '../../lib/utils';
 import { 
   Clock, 
   TrendingUp, 
@@ -27,6 +27,7 @@ function DataItem({ label, value }: { label: string; value: string | number | nu
   );
 }
 
+// Legacy functions kept for backward compatibility, but we'll use dual format functions
 function formatPace(speedMs: number | undefined): string | null {
   if (!speedMs || speedMs <= 0) return null;
   const paceMinPerKm = (1000 / speedMs) / 60;
@@ -85,7 +86,7 @@ export function ActivityDetailView({ activity }: ActivityDetailViewProps) {
           {activity.distance_meters != null && activity.distance_meters > 0 && (
             <DataItem 
               label="Distance" 
-              value={`${(activity.distance_meters / 1000).toFixed(2)} km`} 
+              value={formatDistanceDual(activity.distance_meters)} 
             />
           )}
           {activity.calories != null && activity.calories > 0 && (
@@ -97,7 +98,7 @@ export function ActivityDetailView({ activity }: ActivityDetailViewProps) {
           {activity.average_speed != null && activity.average_speed > 0 && isCardio && (
             <DataItem 
               label="Average Pace" 
-              value={formatPace(activity.average_speed)} 
+              value={formatPaceDual(activity.average_speed)} 
             />
           )}
           {activity.elapsed_duration != null && activity.elapsed_duration > 0 && (
@@ -127,7 +128,7 @@ export function ActivityDetailView({ activity }: ActivityDetailViewProps) {
             {activity.max_speed && isCardio && (
               <DataItem 
                 label="Max Speed" 
-                value={formatSpeed(activity.max_speed)} 
+                value={formatSpeedDual(activity.max_speed)} 
               />
             )}
             {activity.cadence && (
@@ -139,7 +140,7 @@ export function ActivityDetailView({ activity }: ActivityDetailViewProps) {
             {activity.stride_length != null && activity.stride_length > 0 && (
               <DataItem 
                 label="Stride Length" 
-                value={`${(activity.stride_length * 100).toFixed(0)} cm`} 
+                value={formatStrideLengthDual(activity.stride_length)} 
               />
             )}
             {activity.average_power != null && typeof activity.average_power === 'number' && (
@@ -175,13 +176,13 @@ export function ActivityDetailView({ activity }: ActivityDetailViewProps) {
             {activity.elevation_gain != null && typeof activity.elevation_gain === 'number' && (
               <DataItem 
                 label="Elevation Gain" 
-                value={`${activity.elevation_gain.toFixed(0)} m`} 
+                value={formatElevationDual(activity.elevation_gain)} 
               />
             )}
             {activity.elevation_loss != null && typeof activity.elevation_loss === 'number' && (
               <DataItem 
                 label="Elevation Loss" 
-                value={`${activity.elevation_loss.toFixed(0)} m`} 
+                value={formatElevationDual(activity.elevation_loss)} 
               />
             )}
           </div>
@@ -315,10 +316,10 @@ export function ActivityDetailView({ activity }: ActivityDetailViewProps) {
                         {lap.duration ? formatDuration(lap.duration) : '—'}
                       </td>
                       <td className="py-1.5 pr-4 text-right font-mono">
-                        {lap.distance ? `${(lap.distance / 1000).toFixed(2)} km` : '—'}
+                        {lap.distance ? formatDistanceDual(lap.distance) : '—'}
                       </td>
                       <td className="py-1.5 pr-4 text-right font-mono">
-                        {lap.average_speed ? formatPace(lap.average_speed) : '—'}
+                        {lap.average_speed ? formatPaceDual(lap.average_speed) : '—'}
                       </td>
                       {hasHr && (
                         <>
@@ -388,10 +389,10 @@ export function ActivityDetailView({ activity }: ActivityDetailViewProps) {
                         {split.duration ? formatDuration(split.duration) : '—'}
                       </td>
                       <td className="py-1.5 pr-4 text-right font-mono">
-                        {split.distance ? `${(split.distance / 1000).toFixed(2)} km` : '—'}
+                        {split.distance ? formatDistanceDual(split.distance) : '—'}
                       </td>
                       <td className="py-1.5 pr-4 text-right font-mono">
-                        {split.average_speed ? formatPace(split.average_speed) : '—'}
+                        {split.average_speed ? formatPaceDual(split.average_speed) : '—'}
                       </td>
                       {hasHr && (
                         <>
@@ -410,7 +411,7 @@ export function ActivityDetailView({ activity }: ActivityDetailViewProps) {
                       )}
                       {hasElevation && (
                         <td className="py-1.5 pr-4 text-right font-mono">
-                          {split.elevation_gain ? `${split.elevation_gain.toFixed(0)} m` : '—'}
+                          {split.elevation_gain ? formatElevationDual(split.elevation_gain) : '—'}
                         </td>
                       )}
                     </tr>

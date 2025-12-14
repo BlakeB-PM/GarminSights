@@ -25,7 +25,7 @@ import {
   type Activity as ActivityType
 } from '../lib/api';
 import { ActivityDetailView } from '../components/activities/ActivityDetailView';
-import { formatDuration, cn } from '../lib/utils';
+import { formatDuration, cn, formatDistanceDual } from '../lib/utils';
 
 interface DayRecord {
   date: string;
@@ -95,10 +95,13 @@ export function DataViewer() {
       const startDateStr = startDate.toISOString().split('T')[0];
       const endDateStr = today.toISOString().split('T')[0];
 
+      // Increase activity limit for longer date ranges
+      const activityLimit = daysToShow > 60 ? 1000 : 200;
+      
       const [sleepData, dailyData, activityData] = await Promise.all([
         getSleepData(daysToShow).catch(() => []),
         getDailyData(daysToShow).catch(() => []),
-        getActivities({ limit: 200, start_date: startDateStr, end_date: endDateStr }).catch(() => []),
+        getActivities({ limit: activityLimit, start_date: startDateStr, end_date: endDateStr }).catch(() => []),
       ]);
 
       // Create a map of dates to records
@@ -211,18 +214,24 @@ export function DataViewer() {
       {/* Controls */}
       <Card>
         <CardContent className="flex items-center justify-between flex-wrap gap-4">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 flex-wrap">
             <span className="text-gray-400">Show last:</span>
-            {[7, 14, 30, 60].map((days) => (
-              <Button
-                key={days}
-                variant={daysToShow === days ? 'primary' : 'secondary'}
-                size="sm"
-                onClick={() => setDaysToShow(days)}
-              >
-                {days} days
-              </Button>
-            ))}
+            {[7, 14, 30, 60, 180, 365].map((days) => {
+              let label = `${days} days`;
+              if (days === 180) label = '6 months';
+              if (days === 365) label = '1 year';
+              
+              return (
+                <Button
+                  key={days}
+                  variant={daysToShow === days ? 'primary' : 'secondary'}
+                  size="sm"
+                  onClick={() => setDaysToShow(days)}
+                >
+                  {label}
+                </Button>
+              );
+            })}
           </div>
           <div className="flex items-center gap-4 text-sm">
             <span className="flex items-center gap-2">
@@ -396,7 +405,7 @@ export function DataViewer() {
                 {selectedDay.daily ? (
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <DataItem label="Steps" value={selectedDay.daily.steps?.toLocaleString()} />
-                    <DataItem label="Distance" value={selectedDay.daily.distance_meters ? `${(selectedDay.daily.distance_meters / 1000).toFixed(2)} km` : null} />
+                    <DataItem label="Distance" value={formatDistanceDual(selectedDay.daily.distance_meters)} />
                     <DataItem label="Total Calories" value={selectedDay.daily.calories_total?.toLocaleString()} />
                     <DataItem label="Active Calories" value={selectedDay.daily.active_calories?.toLocaleString()} />
                     <DataItem label="BMR Calories" value={selectedDay.daily.calories_bmr?.toLocaleString()} />
