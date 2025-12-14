@@ -3,6 +3,7 @@ import { Header } from '../components/layout/Header';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
 import { Select } from '../components/ui/Select';
 import { MultiSelect } from '../components/ui/MultiSelect';
+import { TimeFrameSelector } from '../components/strength/TimeFrameSelector';
 import { Dumbbell, TrendingUp, Target, Weight } from 'lucide-react';
 import {
   getExercises,
@@ -21,7 +22,7 @@ import {
   type VolumeTrendData,
   type MuscleComparisonData,
 } from '../lib/api';
-import { formatWeight, formatDate, cn } from '../lib/utils';
+import { formatWeightDual, formatVolumeDual, formatDate, cn } from '../lib/utils';
 import {
   LineChart,
   Line,
@@ -54,6 +55,14 @@ export function StrengthAnalytics() {
   const [selectedMuscles, setSelectedMuscles] = useState<string[]>(['Chest', 'Back']);
   const [frequencySortBy, setFrequencySortBy] = useState<'frequency' | 'days_since' | 'volume' | 'alphabetical'>('frequency');
   
+  // Time frame state management
+  const [volumeTrendsWeeks, setVolumeTrendsWeeks] = useState<4 | 8 | 12 | 16 | 24 | 52>(12);
+  const [trainingBalanceWeeks, setTrainingBalanceWeeks] = useState<4 | 8 | 12 | 16 | 24 | 52>(12);
+  const [trainingFrequencyWeeks, setTrainingFrequencyWeeks] = useState<4 | 8 | 12 | 16 | 24 | 52>(12);
+  const [muscleComparisonWeeks, setMuscleComparisonWeeks] = useState<4 | 8 | 12 | 16 | 24 | 52>(12);
+  const [muscleVolumeDays, setMuscleVolumeDays] = useState<7 | 14 | 30 | 60 | 90>(30);
+  const [exerciseProgressDays, setExerciseProgressDays] = useState<7 | 14 | 30 | 60 | 90>(90);
+  
   // Individual loading and error states
   const [loadingStates, setLoadingStates] = useState({
     exercises: true,
@@ -69,18 +78,14 @@ export function StrengthAnalytics() {
   
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Load exercises list and initial data
+  // Load exercises list and initial data (non-time-frame dependent)
   useEffect(() => {
     async function load() {
-      const keys = ['exercises', 'prs', 'muscleVolume', 'keyLifts', 'trainingBalance', 'trainingFrequency', 'volumeTrends'];
+      const keys = ['exercises', 'prs', 'keyLifts'];
       const promises = [
         getExercises(),
         getPersonalRecords(),
-        getMuscleGroupVolume(30),
         getKeyLifts(),
-        getTrainingBalance(12),
-        getTrainingFrequency(12, 'frequency'), // Use default sort for initial load
-        getVolumeTrends(12),
       ];
       
       const results = await Promise.allSettled(promises);
@@ -100,20 +105,8 @@ export function StrengthAnalytics() {
             case 'prs':
               setPrs(Array.isArray(data) ? data : []);
               break;
-            case 'muscleVolume':
-              setMuscleVolume(data || {});
-              break;
             case 'keyLifts':
               setKeyLifts(Array.isArray(data) ? data : []);
-              break;
-            case 'trainingBalance':
-              setTrainingBalance(Array.isArray(data) ? data : []);
-              break;
-            case 'trainingFrequency':
-              setTrainingFrequency(Array.isArray(data) ? data : []);
-              break;
-            case 'volumeTrends':
-              setVolumeTrends(Array.isArray(data) ? data : []);
               break;
           }
           setLoadingStates(prev => ({ ...prev, [key]: false }));
@@ -133,12 +126,72 @@ export function StrengthAnalytics() {
     }
     load();
   }, []);
+
+  // Load muscle volume (days-based)
+  useEffect(() => {
+    setLoadingStates(prev => ({ ...prev, muscleVolume: true }));
+    getMuscleGroupVolume(muscleVolumeDays)
+      .then(data => {
+        setMuscleVolume(data || {});
+        setLoadingStates(prev => ({ ...prev, muscleVolume: false }));
+        setErrors(prev => {
+          const newErrors = { ...prev };
+          delete newErrors.muscleVolume;
+          return newErrors;
+        });
+      })
+      .catch(error => {
+        console.error('Failed to load muscle volume:', error);
+        setLoadingStates(prev => ({ ...prev, muscleVolume: false }));
+        setErrors(prev => ({ ...prev, muscleVolume: 'Failed to load muscle volume data.' }));
+      });
+  }, [muscleVolumeDays]);
+
+  // Load training balance (weeks-based)
+  useEffect(() => {
+    setLoadingStates(prev => ({ ...prev, trainingBalance: true }));
+    getTrainingBalance(trainingBalanceWeeks)
+      .then(data => {
+        setTrainingBalance(Array.isArray(data) ? data : []);
+        setLoadingStates(prev => ({ ...prev, trainingBalance: false }));
+        setErrors(prev => {
+          const newErrors = { ...prev };
+          delete newErrors.trainingBalance;
+          return newErrors;
+        });
+      })
+      .catch(error => {
+        console.error('Failed to load training balance:', error);
+        setLoadingStates(prev => ({ ...prev, trainingBalance: false }));
+        setErrors(prev => ({ ...prev, trainingBalance: 'Failed to load training balance data.' }));
+      });
+  }, [trainingBalanceWeeks]);
+
+  // Load volume trends (weeks-based)
+  useEffect(() => {
+    setLoadingStates(prev => ({ ...prev, volumeTrends: true }));
+    getVolumeTrends(volumeTrendsWeeks)
+      .then(data => {
+        setVolumeTrends(Array.isArray(data) ? data : []);
+        setLoadingStates(prev => ({ ...prev, volumeTrends: false }));
+        setErrors(prev => {
+          const newErrors = { ...prev };
+          delete newErrors.volumeTrends;
+          return newErrors;
+        });
+      })
+      .catch(error => {
+        console.error('Failed to load volume trends:', error);
+        setLoadingStates(prev => ({ ...prev, volumeTrends: false }));
+        setErrors(prev => ({ ...prev, volumeTrends: 'Failed to load volume trends data.' }));
+      });
+  }, [volumeTrendsWeeks]);
   
-  // Load muscle comparison when selected muscles change
+  // Load muscle comparison when selected muscles or weeks change
   useEffect(() => {
     if (selectedMuscles.length >= 2) {
       setLoadingStates(prev => ({ ...prev, muscleComparison: true }));
-      getMuscleComparison(selectedMuscles, 12)
+      getMuscleComparison(selectedMuscles, muscleComparisonWeeks)
         .then(data => {
           setMuscleComparison(Array.isArray(data) ? data : []);
           setLoadingStates(prev => ({ ...prev, muscleComparison: false }));
@@ -156,29 +209,27 @@ export function StrengthAnalytics() {
     } else {
       setMuscleComparison([]);
     }
-  }, [selectedMuscles]);
+  }, [selectedMuscles, muscleComparisonWeeks]);
   
-  // Reload frequency when sort changes
+  // Reload frequency when sort or weeks change
   useEffect(() => {
-    if (!loading) {
-      setLoadingStates(prev => ({ ...prev, trainingFrequency: true }));
-      getTrainingFrequency(12, frequencySortBy)
-        .then(data => {
-          setTrainingFrequency(Array.isArray(data) ? data : []);
-          setLoadingStates(prev => ({ ...prev, trainingFrequency: false }));
-          setErrors(prev => {
-            const newErrors = { ...prev };
-            delete newErrors.trainingFrequency;
-            return newErrors;
-          });
-        })
-        .catch(error => {
-          console.error('Failed to load training frequency:', error);
-          setLoadingStates(prev => ({ ...prev, trainingFrequency: false }));
-          setErrors(prev => ({ ...prev, trainingFrequency: 'Failed to load frequency data.' }));
+    setLoadingStates(prev => ({ ...prev, trainingFrequency: true }));
+    getTrainingFrequency(trainingFrequencyWeeks, frequencySortBy)
+      .then(data => {
+        setTrainingFrequency(Array.isArray(data) ? data : []);
+        setLoadingStates(prev => ({ ...prev, trainingFrequency: false }));
+        setErrors(prev => {
+          const newErrors = { ...prev };
+          delete newErrors.trainingFrequency;
+          return newErrors;
         });
-    }
-  }, [frequencySortBy, loading]);
+      })
+      .catch(error => {
+        console.error('Failed to load training frequency:', error);
+        setLoadingStates(prev => ({ ...prev, trainingFrequency: false }));
+        setErrors(prev => ({ ...prev, trainingFrequency: 'Failed to load frequency data.' }));
+      });
+  }, [frequencySortBy, trainingFrequencyWeeks]);
   
   // Load progress for selected exercise
   useEffect(() => {
@@ -188,7 +239,7 @@ export function StrengthAnalytics() {
     }
     
     setLoadingStates(prev => ({ ...prev, progress: true }));
-    getExerciseProgress(selectedExercise, 90)
+    getExerciseProgress(selectedExercise, exerciseProgressDays)
       .then(data => {
         setProgress(Array.isArray(data) ? data : []);
         setLoadingStates(prev => ({ ...prev, progress: false }));
@@ -203,7 +254,7 @@ export function StrengthAnalytics() {
         setLoadingStates(prev => ({ ...prev, progress: false }));
         setErrors(prev => ({ ...prev, progress: 'Failed to load exercise progress.' }));
       });
-  }, [selectedExercise]);
+  }, [selectedExercise, exerciseProgressDays]);
 
   const exerciseOptions = exercises.map((e) => ({ value: e, label: e }));
 
@@ -272,18 +323,18 @@ export function StrengthAnalytics() {
                       <h3 className="font-semibold text-lg mb-2">{lift.exercise_name}</h3>
                       {lift.best_recent_weight && lift.best_recent_reps && (
                         <p className="text-sm text-gray-400 mb-1">
-                          Best Recent: {formatWeight(lift.best_recent_weight)} × {lift.best_recent_reps} reps
+                          Best Recent: {formatWeightDual(lift.best_recent_weight)} × {lift.best_recent_reps} reps
                         </p>
                       )}
                       {lift.estimated_1rm && (
                         <p className="text-sm font-mono text-accent mb-1">
-                          Est. 1RM: {formatWeight(lift.estimated_1rm)}
+                          Est. 1RM: {formatWeightDual(lift.estimated_1rm)}
                         </p>
                       )}
                       {lift.four_week_trend_percent !== null && (
                         <p className="text-xs text-gray-500 mb-1">
                           4-Week Trend: {lift.four_week_trend_percent > 0 ? '+' : ''}{lift.four_week_trend_percent.toFixed(1)}%
-                          {lift.four_week_trend_lbs && ` (${lift.four_week_trend_lbs > 0 ? '+' : ''}${formatWeight(lift.four_week_trend_lbs)})`}
+                          {lift.four_week_trend_lbs && ` (${lift.four_week_trend_lbs > 0 ? '+' : ''}${formatWeightDual(lift.four_week_trend_lbs)})`}
                         </p>
                       )}
                       {lift.volume_trend_percent !== null && (
@@ -337,7 +388,7 @@ export function StrengthAnalytics() {
                     <span className="text-gray-100 truncate max-w-[200px]">{pr.exercise_name}</span>
                   </div>
                   <div className="text-right">
-                    <p className="font-mono text-accent">{formatWeight(pr.estimated_1rm)}</p>
+                    <p className="font-mono text-accent">{formatWeightDual(pr.estimated_1rm)}</p>
                     <p className="text-xs text-gray-500">{formatDate(pr.date_achieved)}</p>
                   </div>
                 </div>
@@ -352,8 +403,13 @@ export function StrengthAnalytics() {
         {/* Muscle Group Volume */}
         <Card>
           <CardHeader>
-            <CardTitle>Volume by Muscle Group</CardTitle>
-            <CardDescription>Last 30 days breakdown</CardDescription>
+            <div className="flex items-start justify-between gap-4 mb-2">
+              <div>
+                <CardTitle>Volume by Muscle Group</CardTitle>
+                <CardDescription>Volume breakdown by muscle group</CardDescription>
+              </div>
+            </div>
+            <TimeFrameSelector mode="days" value={muscleVolumeDays} onChange={setMuscleVolumeDays} />
           </CardHeader>
           <CardContent>
             <div className="h-64">
@@ -365,7 +421,12 @@ export function StrengthAnalytics() {
                     margin={{ top: 5, right: 20, left: 60, bottom: 5 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
-                    <XAxis type="number" stroke="#6b7280" fontSize={12} />
+                    <XAxis 
+                      type="number" 
+                      stroke="#6b7280" 
+                      fontSize={12}
+                      label={{ value: 'Volume (kg / lbs)', angle: 0, position: 'insideBottom', offset: -5 }}
+                    />
                     <YAxis dataKey="name" type="category" stroke="#6b7280" fontSize={12} />
                     <Tooltip
                       contentStyle={{
@@ -373,7 +434,11 @@ export function StrengthAnalytics() {
                         border: '1px solid #1e1e2e',
                         borderRadius: '8px',
                       }}
-                      formatter={(value: number) => [`${value.toLocaleString()} kg`, 'Volume']}
+                      formatter={(value: number) => {
+                        const kg = value;
+                        const lbs = kg * 2.20462;
+                        return [`${kg.toLocaleString()} kg (${lbs.toLocaleString()} lbs)`, 'Volume'];
+                      }}
                     />
                     <Bar dataKey="volume" fill="#0ea5e9" radius={[0, 4, 4, 0]} />
                   </BarChart>
@@ -398,11 +463,16 @@ export function StrengthAnalytics() {
           {/* View 8: Total Volume Trends */}
           <Card className="mb-6">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingUpIcon className="w-5 h-5 text-accent" />
-                Total Volume Trends
-              </CardTitle>
-              <CardDescription>Weekly tonnage and sets over time</CardDescription>
+              <div className="flex items-start justify-between gap-4 mb-2">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <TrendingUpIcon className="w-5 h-5 text-accent" />
+                    Total Volume Trends
+                  </CardTitle>
+                  <CardDescription>Weekly tonnage and sets over time</CardDescription>
+                </div>
+              </div>
+              <TimeFrameSelector mode="weeks" value={volumeTrendsWeeks} onChange={setVolumeTrendsWeeks} />
             </CardHeader>
             <CardContent>
               {errors.volumeTrends && (
@@ -431,7 +501,7 @@ export function StrengthAnalytics() {
                             yAxisId="left"
                             stroke="#6b7280"
                             fontSize={12}
-                            label={{ value: 'Tonnage (lbs)', angle: -90, position: 'insideLeft' }}
+                            label={{ value: 'Tonnage (kg / lbs)', angle: -90, position: 'insideLeft' }}
                           />
                           <YAxis
                             yAxisId="right"
@@ -446,7 +516,15 @@ export function StrengthAnalytics() {
                               border: '1px solid #1e1e2e',
                               borderRadius: '8px',
                             }}
-                            labelFormatter={(label) => formatDate(label)}
+                            labelFormatter={(label) => `Week of ${formatDate(label)}`}
+                            formatter={(value: any, name: string) => {
+                              if (name === 'Tonnage') {
+                                const kg = value;
+                                const lbs = kg * 2.20462;
+                                return [`${kg.toLocaleString()} kg (${lbs.toLocaleString()} lbs)`, 'Tonnage'];
+                              }
+                              return [`${value}`, name];
+                            }}
                           />
                           <Bar yAxisId="left" dataKey="total_tonnage" fill="#FF6B35" name="Tonnage" radius={[4, 4, 0, 0]} />
                           <Line yAxisId="right" type="monotone" dataKey="total_sets" stroke="#0ea5e9" strokeWidth={2} name="Sets" />
@@ -479,16 +557,16 @@ export function StrengthAnalytics() {
                     return (
                       <div className="mt-6 p-4 bg-card-border/50 rounded-lg space-y-2 text-sm">
                         <p>
-                          Current week: Total volume: {currentWeek.total_tonnage.toLocaleString()} lbs | {currentWeek.total_sets} sets
+                          Current week: Total volume: {formatVolumeDual(currentWeek.total_tonnage)} | {currentWeek.total_sets} sets
                         </p>
                         <p>
-                          4-week average: {avgTonnage.toLocaleString()} lbs | {avgSets.toFixed(0)} sets
+                          4-week average: {formatVolumeDual(avgTonnage)} | {avgSets.toFixed(0)} sets
                         </p>
                         <p>
-                          12-week high: {maxTonnage.toLocaleString()} lbs {maxTonnageWeek && `(${formatDate(maxTonnageWeek.week_start, { month: 'short', day: 'numeric' })})`}
+                          {volumeTrendsWeeks}-week high: {formatVolumeDual(maxTonnage)} {maxTonnageWeek && `(${formatDate(maxTonnageWeek.week_start, { month: 'short', day: 'numeric' })})`}
                         </p>
                         <p>
-                          12-week low: {minTonnage.toLocaleString()} lbs {minTonnageWeek && `(${formatDate(minTonnageWeek.week_start, { month: 'short', day: 'numeric' })})`}
+                          {volumeTrendsWeeks}-week low: {formatVolumeDual(minTonnage)} {minTonnageWeek && `(${formatDate(minTonnageWeek.week_start, { month: 'short', day: 'numeric' })})`}
                         </p>
                         <p>
                           Trend: {trend} Volume {trend === '↑' ? 'increasing' : trend === '↓' ? 'decreasing' : 'stable'} {Math.abs(trendPercent).toFixed(1)}%
@@ -509,11 +587,16 @@ export function StrengthAnalytics() {
           {/* View 6: Training Balance */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Activity className="w-5 h-5 text-accent" />
-                Training Balance
-              </CardTitle>
-              <CardDescription>Strength vs Cardio sessions and time</CardDescription>
+              <div className="flex items-start justify-between gap-4 mb-2">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Activity className="w-5 h-5 text-accent" />
+                    Training Balance
+                  </CardTitle>
+                  <CardDescription>Strength vs Cardio sessions and time</CardDescription>
+                </div>
+              </div>
+              <TimeFrameSelector mode="weeks" value={trainingBalanceWeeks} onChange={setTrainingBalanceWeeks} />
             </CardHeader>
             <CardContent>
               {errors.trainingBalance && (
@@ -542,14 +625,19 @@ export function StrengthAnalytics() {
                         fontSize={12}
                         tickFormatter={(value) => formatDate(value, { month: 'short', day: 'numeric' })}
                       />
-                      <YAxis stroke="#6b7280" fontSize={12} />
+                      <YAxis 
+                        stroke="#6b7280" 
+                        fontSize={12}
+                        label={{ value: 'Sessions', angle: -90, position: 'insideLeft' }}
+                      />
                       <Tooltip
                         contentStyle={{
                           backgroundColor: '#12121a',
                           border: '1px solid #1e1e2e',
                           borderRadius: '8px',
                         }}
-                        labelFormatter={(label) => formatDate(label)}
+                        labelFormatter={(label) => `Week of ${formatDate(label)}`}
+                        formatter={(value: any, name: string) => [`${value} sessions`, name]}
                       />
                       <Bar dataKey="strength_sessions" stackId="a" fill="#FF6B35" name="Strength" />
                       <Bar dataKey="cardio_sessions" stackId="a" fill="#2ECC71" name="Cardio" />
@@ -576,14 +664,19 @@ export function StrengthAnalytics() {
                         fontSize={12}
                         tickFormatter={(value) => formatDate(value, { month: 'short', day: 'numeric' })}
                       />
-                      <YAxis stroke="#6b7280" fontSize={12} />
+                      <YAxis 
+                        stroke="#6b7280" 
+                        fontSize={12}
+                        label={{ value: 'Minutes', angle: -90, position: 'insideLeft' }}
+                      />
                       <Tooltip
                         contentStyle={{
                           backgroundColor: '#12121a',
                           border: '1px solid #1e1e2e',
                           borderRadius: '8px',
                         }}
-                        labelFormatter={(label) => formatDate(label)}
+                        labelFormatter={(label) => `Week of ${formatDate(label)}`}
+                        formatter={(value: any, name: string) => [`${value} min`, name]}
                       />
                       <Bar dataKey="strength_minutes" fill="#FF6B35" name="Strength" />
                       <Bar dataKey="zone2_minutes" fill="#2ECC71" name="Zone 2" />
@@ -643,8 +736,13 @@ export function StrengthAnalytics() {
           
               <Card className="mb-6">
             <CardHeader>
-              <CardTitle>Training Frequency Analysis</CardTitle>
-              <CardDescription>Average sessions per week by muscle group (last 12 weeks)</CardDescription>
+              <div className="flex items-start justify-between gap-4 mb-2">
+                <div>
+                  <CardTitle>Training Frequency Analysis</CardTitle>
+                  <CardDescription>Average sessions per week by muscle group</CardDescription>
+                </div>
+              </div>
+              <TimeFrameSelector mode="weeks" value={trainingFrequencyWeeks} onChange={setTrainingFrequencyWeeks} />
             </CardHeader>
             <CardContent>
               {errors.trainingFrequency && (
@@ -693,7 +791,12 @@ export function StrengthAnalytics() {
                   margin={{ top: 5, right: 20, left: 100, bottom: 5 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
-                  <XAxis type="number" stroke="#6b7280" fontSize={12} />
+                  <XAxis 
+                    type="number" 
+                    stroke="#6b7280" 
+                    fontSize={12}
+                    label={{ value: 'Sessions per Week', position: 'insideBottom', offset: -5 }}
+                  />
                   <YAxis dataKey="muscle_group" type="category" stroke="#6b7280" fontSize={12} />
                   <Tooltip
                     contentStyle={{
@@ -701,7 +804,7 @@ export function StrengthAnalytics() {
                       border: '1px solid #1e1e2e',
                       borderRadius: '8px',
                     }}
-                    formatter={(value: number) => [`${value.toFixed(2)}x/week`, 'Frequency']}
+                    formatter={(value: number) => [`${value.toFixed(2)} sessions/week`, 'Average Frequency']}
                   />
                   <Bar dataKey="avg_sessions_per_week" fill="#0ea5e9" radius={[0, 4, 4, 0]} />
                 </BarChart>
@@ -731,8 +834,13 @@ export function StrengthAnalytics() {
       {/* View 9: Muscle Comparison */}
       <Card>
         <CardHeader>
-          <CardTitle>Muscle Group Comparison</CardTitle>
-          <CardDescription>Compare sets per week across muscle groups (select 2-4 groups)</CardDescription>
+          <div className="flex items-start justify-between gap-4 mb-2">
+            <div>
+              <CardTitle>Muscle Group Comparison</CardTitle>
+              <CardDescription>Compare sets per week across muscle groups (select 2-4 groups)</CardDescription>
+            </div>
+          </div>
+          <TimeFrameSelector mode="weeks" value={muscleComparisonWeeks} onChange={setMuscleComparisonWeeks} />
         </CardHeader>
         <CardContent>
           <div className="mb-4 space-y-3">
@@ -798,14 +906,19 @@ export function StrengthAnalytics() {
                       fontSize={12}
                       tickFormatter={(value) => formatDate(value, { month: 'short', day: 'numeric' })}
                     />
-                    <YAxis stroke="#6b7280" fontSize={12} />
+                    <YAxis 
+                      stroke="#6b7280" 
+                      fontSize={12}
+                      label={{ value: 'Sets per Week', angle: -90, position: 'insideLeft' }}
+                    />
                     <Tooltip
                       contentStyle={{
                         backgroundColor: '#12121a',
                         border: '1px solid #1e1e2e',
                         borderRadius: '8px',
                       }}
-                      labelFormatter={(label) => formatDate(label)}
+                      labelFormatter={(label) => `Week of ${formatDate(label)}`}
+                      formatter={(value: any, name: string) => [`${value} sets`, name]}
                     />
                     <Legend />
                     {selectedMuscles.map((mg, idx) => {

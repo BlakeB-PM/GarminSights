@@ -14,9 +14,9 @@ import { cn } from '../../lib/utils';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/strength', icon: Dumbbell, label: 'Strength Lab' },
   { to: '/data', icon: Table2, label: 'Data Viewer' },
   { to: '/activities', icon: Activity, label: 'Activities' },
-  { to: '/strength', icon: Dumbbell, label: 'Strength' },
   { to: '/coach', icon: MessageCircle, label: 'AI Coach' },
 ];
 
