@@ -165,3 +165,28 @@ async def backfill_strength_data():
             "error": str(e)
         }
 
+
+@router.post("/backfill-wellness")
+async def backfill_wellness_fields(days_back: int = 30):
+    """
+    Backfill missing wellness fields (avg_heart_rate, hrv_average, resting_hr, stress durations)
+    from raw_json for existing records.
+    
+    This re-extracts these fields from the stored raw_json without re-fetching from Garmin.
+    Useful for fixing missing data after improving extraction logic.
+    """
+    sync_service = get_sync_service()
+    
+    try:
+        result = sync_service.backfill_wellness_fields(days_back=days_back)
+        return {
+            "success": True,
+            **result
+        }
+    except Exception as e:
+        logger.error(f"Backfill wellness error: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e)
+        }
+

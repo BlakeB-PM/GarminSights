@@ -137,7 +137,9 @@ class DailyBase(BaseModel):
     body_battery_drained: Optional[int] = None
     stress_average: Optional[int] = None
     stress_high: Optional[int] = None
-    stress_low: Optional[int] = None
+    low_stress_duration: Optional[int] = None  # Duration in seconds
+    medium_stress_duration: Optional[int] = None  # Duration in seconds
+    high_stress_duration: Optional[int] = None  # Duration in seconds
     rest_stress_duration: Optional[int] = None
     activity_stress_duration: Optional[int] = None
     intensity_minutes_moderate: Optional[int] = None

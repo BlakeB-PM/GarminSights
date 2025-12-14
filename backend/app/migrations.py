@@ -70,7 +70,8 @@ def migration_2_rebuild_dailies_table() -> None:
         required_columns = [
             'distance_meters', 'active_calories', 'calories_bmr',
             'body_battery_charged', 'body_battery_drained',
-            'stress_high', 'stress_low', 'rest_stress_duration', 'activity_stress_duration',
+            'stress_high', 'low_stress_duration', 'medium_stress_duration', 'high_stress_duration',
+            'rest_stress_duration', 'activity_stress_duration',
             'intensity_minutes_moderate', 'intensity_minutes_vigorous', 'intensity_minutes_goal',
             'avg_heart_rate', 'max_heart_rate', 'min_heart_rate', 'resting_heart_rate'
         ]
@@ -99,7 +100,9 @@ def migration_2_rebuild_dailies_table() -> None:
                 body_battery_drained INTEGER,
                 stress_average INTEGER,
                 stress_high INTEGER,
-                stress_low INTEGER,
+                low_stress_duration INTEGER,
+                medium_stress_duration INTEGER,
+                high_stress_duration INTEGER,
                 rest_stress_duration INTEGER,
                 activity_stress_duration INTEGER,
                 intensity_minutes_moderate INTEGER,

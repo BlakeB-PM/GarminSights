@@ -388,7 +388,31 @@ class SyncService:
                     continue
                 
                 # Extract relevant fields
-                daily_sleep = sleep_data.get("dailySleepDTO", {})
+                daily_sleep = sleep_data.get("dailySleepDTO", {}) or sleep_data.get("sleepData", {})
+                
+                # Helper function to safely get nested values
+                def get_nested_sleep(data, *keys, default=None):
+                    """Get value from nested dict using multiple keys."""
+                    for key in keys:
+                        if isinstance(data, dict):
+                            data = data.get(key)
+                        else:
+                            return default
+                        if data is None:
+                            return default
+                    return data if data is not None else default
+                
+                # HRV is at TOP LEVEL of sleep_data, not in dailySleepDTO
+                hrv_value = (
+                    sleep_data.get("avgOvernightHrv") or
+                    daily_sleep.get("avgOvernightHrv")
+                )
+                
+                # Resting HR is at TOP LEVEL of sleep_data, not in dailySleepDTO  
+                resting_hr_value = (
+                    sleep_data.get("restingHeartRate") or
+                    daily_sleep.get("restingHeartRate")
+                )
                 
                 # Check if this is an update or new record
                 existing = execute_query(
@@ -405,14 +429,14 @@ class SyncService:
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         date_str,
-                        daily_sleep.get("sleepScores", {}).get("overall", {}).get("value"),
+                        daily_sleep.get("sleepScores", {}).get("overall", {}).get("value") if isinstance(daily_sleep.get("sleepScores"), dict) else daily_sleep.get("sleepScore"),
                         daily_sleep.get("sleepTimeSeconds"),
                         daily_sleep.get("deepSleepSeconds"),
                         daily_sleep.get("lightSleepSeconds"),
                         daily_sleep.get("remSleepSeconds"),
                         daily_sleep.get("awakeSleepSeconds"),
-                        daily_sleep.get("avgOvernightHrv"),
-                        daily_sleep.get("restingHeartRate"),
+                        hrv_value,
+                        resting_hr_value,
                         json.dumps(sleep_data)
                     )
                 )
@@ -460,10 +484,8 @@ class SyncService:
                             return default
                     return data if data is not None else default
                 
-                # Extract values with fallbacks for different field name variations
+                # Extract values - Garmin API has these fields at top level
                 body_battery = daily_data.get("bodyBattery") or daily_data.get("bodyBatteryDTO") or {}
-                stress = daily_data.get("stress") or daily_data.get("stressDTO") or {}
-                heart_rate = daily_data.get("heartRate") or daily_data.get("heartRateDTO") or {}
                 intensity = daily_data.get("intensity") or daily_data.get("intensityMinutes") or {}
                 
                 # Check if this is an update or new record
@@ -478,11 +500,12 @@ class SyncService:
                        (date, steps, distance_meters,
                         active_calories, calories_total, calories_bmr,
                         body_battery_high, body_battery_low, body_battery_charged, body_battery_drained,
-                        stress_average, stress_high, stress_low, rest_stress_duration, activity_stress_duration,
+                        stress_average, stress_high, low_stress_duration, medium_stress_duration, high_stress_duration,
+                        rest_stress_duration, activity_stress_duration,
                         intensity_minutes_moderate, intensity_minutes_vigorous, intensity_minutes_goal,
                         avg_heart_rate, max_heart_rate, min_heart_rate, resting_heart_rate,
                         raw_json)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         date_str,
                         daily_data.get("totalSteps") or daily_data.get("steps"),
@@ -494,18 +517,21 @@ class SyncService:
                         daily_data.get("bodyBatteryLowestValue") or get_nested(body_battery, "lowestValue") or get_nested(body_battery, "low"),
                         daily_data.get("bodyBatteryChargedValue") or get_nested(body_battery, "chargedValue") or get_nested(body_battery, "charged"),
                         daily_data.get("bodyBatteryDrainedValue") or get_nested(body_battery, "drainedValue") or get_nested(body_battery, "drained"),
-                        daily_data.get("averageStressLevel") or get_nested(stress, "averageStressLevel") or get_nested(stress, "average") or get_nested(stress, "avg"),
-                        daily_data.get("maxStressLevel") or get_nested(stress, "maxStressLevel") or get_nested(stress, "max"),
-                        daily_data.get("minStressLevel") or get_nested(stress, "minStressLevel") or get_nested(stress, "min"),
-                        daily_data.get("restStressDuration") or get_nested(stress, "restStressDuration") or get_nested(stress, "restDuration"),
-                        daily_data.get("activityStressDuration") or get_nested(stress, "activityStressDuration") or get_nested(stress, "activityDuration"),
+                        daily_data.get("averageStressLevel"),  # Stored as stress_average
+                        daily_data.get("maxStressLevel"),  # Stored as stress_high
+                        daily_data.get("lowStressDuration"),  # Stored as low_stress_duration
+                        daily_data.get("mediumStressDuration"),  # Stored as medium_stress_duration
+                        daily_data.get("highStressDuration"),  # Stored as high_stress_duration
+                        daily_data.get("restStressDuration"),
+                        daily_data.get("activityStressDuration"),
                         daily_data.get("moderateIntensityMinutes") or get_nested(intensity, "moderateIntensityMinutes") or get_nested(intensity, "moderate") or daily_data.get("moderateMinutes"),
                         daily_data.get("vigorousIntensityMinutes") or get_nested(intensity, "vigorousIntensityMinutes") or get_nested(intensity, "vigorous") or daily_data.get("vigorousMinutes"),
                         daily_data.get("intensityMinutesGoal") or get_nested(intensity, "goal") or daily_data.get("intensityGoal"),
-                        daily_data.get("averageHeartRate") or get_nested(heart_rate, "averageHeartRate") or get_nested(heart_rate, "average") or get_nested(heart_rate, "avg"),
-                        daily_data.get("maxHeartRate") or get_nested(heart_rate, "maxHeartRate") or get_nested(heart_rate, "max"),
-                        daily_data.get("minHeartRate") or get_nested(heart_rate, "minHeartRate") or get_nested(heart_rate, "min"),
-                        daily_data.get("restingHeartRate") or get_nested(heart_rate, "restingHeartRate") or get_nested(heart_rate, "resting") or daily_data.get("restingHR"),
+                        # averageHeartRate doesn't exist in Garmin API - calculate from min/max if both exist
+                        (int((daily_data.get("minAvgHeartRate") + daily_data.get("maxAvgHeartRate")) / 2) if daily_data.get("minAvgHeartRate") is not None and daily_data.get("maxAvgHeartRate") is not None else None),
+                        daily_data.get("maxHeartRate"),
+                        daily_data.get("minHeartRate"),
+                        daily_data.get("restingHeartRate"),
                         json.dumps(daily_data)
                     )
                 )
@@ -518,6 +544,152 @@ class SyncService:
         
         logger.info(f"Synced {synced} days of daily data")
         return synced
+    
+    def backfill_wellness_fields(self, days_back: int = 30) -> dict:
+        """
+        Backfill missing wellness fields (avg_heart_rate, hrv_average, resting_hr, stress durations)
+        from raw_json for existing records.
+        
+        Returns:
+            Dict with counts of updated records
+        """
+        today = datetime.now().date()
+        updated_dailies = 0
+        updated_sleep = 0
+        
+        # Helper function to safely get nested values
+        def get_nested(data, *keys, default=None):
+            """Get value from nested dict using multiple keys."""
+            for key in keys:
+                if isinstance(data, dict):
+                    data = data.get(key)
+                else:
+                    return default
+                if data is None:
+                    return default
+            return data if data is not None else default
+        
+        # Backfill daily data
+        for i in range(days_back):
+            date = today - timedelta(days=i)
+            date_str = date.isoformat()
+            
+            # Get existing daily record with missing fields
+            dailies = execute_query(
+                """SELECT id, raw_json, low_stress_duration, medium_stress_duration, high_stress_duration, avg_heart_rate 
+                   FROM dailies 
+                   WHERE date = ? AND (low_stress_duration IS NULL OR medium_stress_duration IS NULL OR high_stress_duration IS NULL OR avg_heart_rate IS NULL)""",
+                (date_str,)
+            )
+            
+            for daily in dailies:
+                if not daily.get("raw_json"):
+                    continue
+                
+                try:
+                    daily_data = json.loads(daily["raw_json"])
+                    
+                    # Extract values with fallbacks
+                    stress = daily_data.get("stress") or daily_data.get("stressDTO") or {}
+                    stress_levels = stress.get("stressLevelsDTO") if isinstance(stress, dict) else {}
+                    heart_rate = daily_data.get("heartRate") or daily_data.get("heartRateDTO") or {}
+                    hr_values = heart_rate.get("heartRateValues") if isinstance(heart_rate, dict) else []
+                    
+                    # Extract missing fields - use actual field names from Garmin API
+                    low_stress_duration = daily_data.get("lowStressDuration")
+                    medium_stress_duration = daily_data.get("mediumStressDuration")
+                    high_stress_duration = daily_data.get("highStressDuration")
+                    
+                    # averageHeartRate doesn't exist - calculate from min/max if both exist
+                    avg_heart_rate = None
+                    min_avg_hr = daily_data.get("minAvgHeartRate")
+                    max_avg_hr = daily_data.get("maxAvgHeartRate")
+                    if min_avg_hr is not None and max_avg_hr is not None:
+                        avg_heart_rate = (min_avg_hr + max_avg_hr) / 2
+                    
+                    # Update only if we found a value and the current value is NULL
+                    updates = []
+                    params = []
+                    
+                    if low_stress_duration is not None and daily.get("low_stress_duration") is None:
+                        updates.append("low_stress_duration = ?")
+                        params.append(low_stress_duration)
+                    
+                    if medium_stress_duration is not None and daily.get("medium_stress_duration") is None:
+                        updates.append("medium_stress_duration = ?")
+                        params.append(medium_stress_duration)
+                    
+                    if high_stress_duration is not None and daily.get("high_stress_duration") is None:
+                        updates.append("high_stress_duration = ?")
+                        params.append(high_stress_duration)
+                    
+                    if avg_heart_rate is not None and daily.get("avg_heart_rate") is None:
+                        updates.append("avg_heart_rate = ?")
+                        params.append(avg_heart_rate)
+                    
+                    if updates:
+                        params.append(daily["id"])
+                        execute_write(
+                            f"UPDATE dailies SET {', '.join(updates)} WHERE id = ?",
+                            tuple(params)
+                        )
+                        updated_dailies += 1
+                        logger.debug(f"Updated daily {date_str}: {', '.join(updates)}")
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to backfill daily {date_str}: {e}")
+            
+            # Get existing sleep record with missing fields
+            sleep_records = execute_query(
+                """SELECT id, raw_json, hrv_average, resting_hr 
+                   FROM sleep 
+                   WHERE date = ? AND (hrv_average IS NULL OR resting_hr IS NULL)""",
+                (date_str,)
+            )
+            
+            for sleep in sleep_records:
+                if not sleep.get("raw_json"):
+                    continue
+                
+                try:
+                    sleep_data = json.loads(sleep["raw_json"])
+                    daily_sleep = sleep_data.get("dailySleepDTO", {}) or sleep_data.get("sleepData", {})
+                    
+                    # HRV is at TOP LEVEL of sleep_data, not in dailySleepDTO
+                    hrv_value = sleep_data.get("avgOvernightHrv") or daily_sleep.get("avgOvernightHrv")
+                    
+                    # Resting HR is at TOP LEVEL of sleep_data, not in dailySleepDTO
+                    resting_hr_value = sleep_data.get("restingHeartRate") or daily_sleep.get("restingHeartRate")
+                    
+                    # Update only if we found a value and the current value is NULL
+                    updates = []
+                    params = []
+                    
+                    if hrv_value is not None and sleep.get("hrv_average") is None:
+                        updates.append("hrv_average = ?")
+                        params.append(hrv_value)
+                    
+                    if resting_hr_value is not None and sleep.get("resting_hr") is None:
+                        updates.append("resting_hr = ?")
+                        params.append(resting_hr_value)
+                    
+                    if updates:
+                        params.append(sleep["id"])
+                        execute_write(
+                            f"UPDATE sleep SET {', '.join(updates)} WHERE id = ?",
+                            tuple(params)
+                        )
+                        updated_sleep += 1
+                        logger.debug(f"Updated sleep {date_str}: {', '.join(updates)}")
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to backfill sleep {date_str}: {e}")
+        
+        logger.info(f"Backfill complete: {updated_dailies} daily records, {updated_sleep} sleep records updated")
+        return {
+            "daily_updated": updated_dailies,
+            "sleep_updated": updated_sleep
+        }
 
 
 def get_sync_service() -> SyncService:

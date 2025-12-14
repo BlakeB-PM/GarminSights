@@ -420,8 +420,11 @@ export function DataViewer() {
                     <DataItem label="Drained" value={selectedDay.daily.body_battery_drained} />
                     <DataItem label="Stress Avg" value={selectedDay.daily.stress_average} />
                     <DataItem label="Stress High" value={selectedDay.daily.stress_high} />
-                    <DataItem label="Stress Low" value={selectedDay.daily.stress_low} />
+                    <DataItem label="Low Stress" value={formatMinutes(selectedDay.daily.low_stress_duration)} />
+                    <DataItem label="Medium Stress" value={formatMinutes(selectedDay.daily.medium_stress_duration)} />
+                    <DataItem label="High Stress" value={formatMinutes(selectedDay.daily.high_stress_duration)} />
                     <DataItem label="Rest Stress" value={formatMinutes(selectedDay.daily.rest_stress_duration)} />
+                    <DataItem label="Activity Stress" value={formatMinutes(selectedDay.daily.activity_stress_duration)} />
                   </div>
                 ) : (
                   <p className="text-gray-500">No body battery data for this day</p>
