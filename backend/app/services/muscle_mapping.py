@@ -35,8 +35,9 @@ MUSCLE_KEYWORDS = {
     ],
     "Shoulders": [
         "shoulder press", "overhead press", "ohp", "military press",
-        "lateral raise", "side raise", "front raise", "rear delt",
-        "rear deltoid", "delt", "deltoid", "shoulder", "shoulders",
+        "lateral raise", "lateral raises", "side raise", "side raises",
+        "front raise", "front raises", "rear delt", "rear deltoid",
+        "delt", "deltoid", "shoulder", "shoulders",
         "arnold press", "dumbbell press", "barbell press",
         "upright row", "shrug", "shrugs", "face pull"
     ],
@@ -92,6 +93,8 @@ COMPOUND_EXERCISES = {
     "squat": ("Quads", ["Glutes"]),
     "bench press": ("Chest", ["Triceps", "Shoulders"]),
     "bench": ("Chest", ["Triceps", "Shoulders"]),
+    "close grip bench": ("Triceps", ["Chest"]),
+    "close-grip bench": ("Triceps", ["Chest"]),
     "overhead press": ("Shoulders", ["Triceps"]),
     "ohp": ("Shoulders", ["Triceps"]),
     "military press": ("Shoulders", ["Triceps"]),

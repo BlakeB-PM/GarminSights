@@ -52,7 +52,7 @@ export function StrengthAnalytics() {
   const [trainingFrequency, setTrainingFrequency] = useState<MuscleFrequency[]>([]);
   const [volumeTrends, setVolumeTrends] = useState<VolumeTrendData[]>([]);
   const [muscleComparison, setMuscleComparison] = useState<MuscleComparisonData[]>([]);
-  const [selectedMuscles, setSelectedMuscles] = useState<string[]>(['Chest', 'Back']);
+  const [selectedMuscles, setSelectedMuscles] = useState<string[]>(['Chest', 'Back', 'Shoulders', 'Triceps', 'Biceps', 'Abs', 'Quads', 'Hamstrings', 'Glutes', 'Calves']);
   const [frequencySortBy, setFrequencySortBy] = useState<'frequency' | 'days_since' | 'volume' | 'alphabetical'>('frequency');
   
   // Time frame state management
@@ -283,7 +283,461 @@ export function StrengthAnalytics() {
         subtitle="Comprehensive strength training analytics and insights"
       />
 
-      {/* Section 1: Overview - Key Lifts & Summary */}
+      {/* Section 1: Key Metrics */}
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-xl font-semibold mb-4 text-gray-100">Key Metrics</h2>
+          
+          {/* View 8: Total Volume Trends */}
+          <Card className="mb-6">
+            <CardHeader>
+              <div className="flex items-start justify-between gap-4 mb-2">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <TrendingUpIcon className="w-5 h-5 text-accent" />
+                    Total Volume Trends
+                  </CardTitle>
+                  <CardDescription>Weekly tonnage and sets over time</CardDescription>
+                </div>
+              </div>
+              <TimeFrameSelector mode="weeks" value={volumeTrendsWeeks} onChange={setVolumeTrendsWeeks} />
+            </CardHeader>
+            <CardContent>
+              {errors.volumeTrends && (
+                <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 rounded text-red-400 text-sm">
+                  {errors.volumeTrends}
+                </div>
+              )}
+              {loadingStates.volumeTrends ? (
+                <div className="h-80 flex items-center justify-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent" />
+                </div>
+              ) : (
+                <>
+                  <div className="h-80">
+                    {volumeTrends.length > 0 ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <ComposedChart data={volumeTrends} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
+                          <XAxis
+                            dataKey="week_start"
+                            stroke="#6b7280"
+                            fontSize={12}
+                            tickFormatter={(value) => formatDate(value, { month: 'short', day: 'numeric' })}
+                            interval={0}
+                            angle={-45}
+                            textAnchor="end"
+                            height={60}
+                          />
+                          <YAxis
+                            yAxisId="left"
+                            stroke="#6b7280"
+                            fontSize={12}
+                            label={{ value: 'Tonnage (kg / lbs)', angle: -90, position: 'insideLeft' }}
+                          />
+                          <YAxis
+                            yAxisId="right"
+                            orientation="right"
+                            stroke="#6b7280"
+                            fontSize={12}
+                            label={{ value: 'Sets', angle: 90, position: 'insideRight' }}
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: '#12121a',
+                              border: '1px solid #1e1e2e',
+                              borderRadius: '8px',
+                            }}
+                            labelFormatter={(label) => `Week of ${formatDate(label)}`}
+                            formatter={(value: any, name: string) => {
+                              if (name === 'Tonnage') {
+                                const kg = value;
+                                const lbs = kg * 2.20462;
+                                return [`${kg.toLocaleString()} kg (${lbs.toLocaleString()} lbs)`, 'Tonnage'];
+                              }
+                              return [`${value}`, name];
+                            }}
+                          />
+                          <Bar yAxisId="left" dataKey="total_tonnage" fill="#FF6B35" name="Tonnage" radius={[4, 4, 0, 0]} />
+                          <Line yAxisId="right" type="monotone" dataKey="total_sets" stroke="#0ea5e9" strokeWidth={2} name="Sets" />
+                          <Legend />
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-gray-500">No data</div>
+                    )}
+                  </div>
+                  
+                  {/* Metrics Panel */}
+                  {volumeTrends.length > 0 && (() => {
+                    const currentWeek = volumeTrends[volumeTrends.length - 1];
+                    const fourWeekAvg = volumeTrends.slice(-4).reduce((acc, week) => ({
+                      tonnage: acc.tonnage + week.total_tonnage,
+                      sets: acc.sets + week.total_sets,
+                    }), { tonnage: 0, sets: 0 });
+                    const avgTonnage = fourWeekAvg.tonnage / 4;
+                    const avgSets = fourWeekAvg.sets / 4;
+                    const allTonnage = volumeTrends.map(w => w.total_tonnage);
+                    const allSets = volumeTrends.map(w => w.total_sets);
+                    const maxTonnage = Math.max(...allTonnage);
+                    const minTonnage = Math.min(...allTonnage);
+                    const maxTonnageWeek = volumeTrends.find(w => w.total_tonnage === maxTonnage);
+                    const minTonnageWeek = volumeTrends.find(w => w.total_tonnage === minTonnage);
+                    const trend = currentWeek.total_tonnage > avgTonnage ? '↑' : currentWeek.total_tonnage < avgTonnage ? '↓' : '→';
+                    const trendPercent = avgTonnage > 0 ? ((currentWeek.total_tonnage - avgTonnage) / avgTonnage * 100) : 0;
+                    
+                    return (
+                      <div className="mt-6 p-4 bg-card-border/50 rounded-lg space-y-2 text-sm">
+                        <p>
+                          Current week: Total volume: {formatVolumeDual(currentWeek.total_tonnage)} | {currentWeek.total_sets} sets
+                        </p>
+                        <p>
+                          4-week average: {formatVolumeDual(avgTonnage)} | {avgSets.toFixed(0)} sets
+                        </p>
+                        <p>
+                          {volumeTrendsWeeks}-week high: {formatVolumeDual(maxTonnage)} {maxTonnageWeek && `(${formatDate(maxTonnageWeek.week_start, { month: 'short', day: 'numeric' })})`}
+                        </p>
+                        <p>
+                          {volumeTrendsWeeks}-week low: {formatVolumeDual(minTonnage)} {minTonnageWeek && `(${formatDate(minTonnageWeek.week_start, { month: 'short', day: 'numeric' })})`}
+                        </p>
+                        <p>
+                          Trend: {trend} Volume {trend === '↑' ? 'increasing' : trend === '↓' ? 'decreasing' : 'stable'} {Math.abs(trendPercent).toFixed(1)}%
+                        </p>
+                        {currentWeek.week_over_week_delta_percent !== null && (
+                          <p className="text-green-500">
+                            {currentWeek.week_over_week_delta_percent > 0 ? '+' : ''}{currentWeek.week_over_week_delta_percent.toFixed(1)}% from last week
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </>
+              )}
+            </CardContent>
+          </Card>
+          
+          {/* View 6: Training Balance */}
+          <Card className="mb-6">
+            <CardHeader>
+              <div className="flex items-start justify-between gap-4 mb-2">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Activity className="w-5 h-5 text-accent" />
+                    Training Balance
+                  </CardTitle>
+                  <CardDescription>Strength vs Cardio sessions and time</CardDescription>
+                </div>
+              </div>
+              <TimeFrameSelector mode="weeks" value={trainingBalanceWeeks} onChange={setTrainingBalanceWeeks} />
+            </CardHeader>
+            <CardContent>
+              {errors.trainingBalance && (
+                <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 rounded text-red-400 text-sm">
+                  {errors.trainingBalance}
+                </div>
+              )}
+              {loadingStates.trainingBalance ? (
+                <div className="h-64 flex items-center justify-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent" />
+                </div>
+              ) : (
+                <>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Session Count Chart */}
+            <div>
+              <h4 className="text-sm font-medium mb-4">Session Count</h4>
+              <div className="h-64">
+                {trainingBalance.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={trainingBalance} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
+                      <XAxis
+                        dataKey="week_start"
+                        stroke="#6b7280"
+                        fontSize={12}
+                        tickFormatter={(value) => formatDate(value, { month: 'short', day: 'numeric' })}
+                      />
+                      <YAxis 
+                        stroke="#6b7280" 
+                        fontSize={12}
+                        label={{ value: 'Sessions', angle: -90, position: 'insideLeft' }}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: '#12121a',
+                          border: '1px solid #1e1e2e',
+                          borderRadius: '8px',
+                        }}
+                        labelFormatter={(label) => `Week of ${formatDate(label)}`}
+                        formatter={(value: any, name: string) => [`${value} sessions`, name]}
+                      />
+                      <Bar dataKey="strength_sessions" fill="#FF6B35" name="Strength" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="cardio_sessions" fill="#2ECC71" name="Cardio" radius={[4, 4, 0, 0]} />
+                      <Legend />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex items-center justify-center h-full text-gray-500">No data</div>
+                )}
+              </div>
+            </div>
+            
+            {/* Training Time Chart */}
+            <div>
+              <h4 className="text-sm font-medium mb-4">Training Time (minutes)</h4>
+              <div className="h-64">
+                {trainingBalance.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={trainingBalance} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
+                      <XAxis
+                        dataKey="week_start"
+                        stroke="#6b7280"
+                        fontSize={12}
+                        tickFormatter={(value) => formatDate(value, { month: 'short', day: 'numeric' })}
+                      />
+                      <YAxis 
+                        stroke="#6b7280" 
+                        fontSize={12}
+                        label={{ value: 'Minutes', angle: -90, position: 'insideLeft' }}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: '#12121a',
+                          border: '1px solid #1e1e2e',
+                          borderRadius: '8px',
+                        }}
+                        labelFormatter={(label) => `Week of ${formatDate(label)}`}
+                        formatter={(value: any, name: string) => [`${value} min`, name]}
+                      />
+                      <Bar dataKey="strength_minutes" fill="#FF6B35" name="Strength" />
+                      <Bar dataKey="zone2_minutes" fill="#2ECC71" name="Zone 2" />
+                      <Bar dataKey="vo2_minutes" fill="#1a8a5e" name="VO2 Max" />
+                      <Legend />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex items-center justify-center h-full text-gray-500">No data</div>
+                )}
+              </div>
+            </div>
+          </div>
+          
+          {/* Context Panel */}
+          {trainingBalance.length > 0 && (() => {
+            const currentWeek = trainingBalance[trainingBalance.length - 1];
+            const fourWeekAvg = trainingBalance.slice(-4).reduce((acc, week) => ({
+              strength: acc.strength + week.strength_sessions,
+              cardio: acc.cardio + week.cardio_sessions,
+              strengthMin: acc.strengthMin + week.strength_minutes,
+              zone2Min: acc.zone2Min + week.zone2_minutes,
+            }), { strength: 0, cardio: 0, strengthMin: 0, zone2Min: 0 });
+            const avgStrength = fourWeekAvg.strength / 4;
+            const avgCardio = fourWeekAvg.cardio / 4;
+            const avgStrengthMin = fourWeekAvg.strengthMin / 4;
+            const avgZone2Min = fourWeekAvg.zone2Min / 4;
+            
+            return (
+              <div className="mt-6 p-4 bg-card-border/50 rounded-lg space-y-2 text-sm">
+                <p>
+                  This week: {currentWeek.strength_sessions} strength, {currentWeek.zone2_sessions} Zone 2, {currentWeek.vo2_sessions} VO2 Max
+                </p>
+                <p>
+                  Duration: {currentWeek.strength_minutes} min strength | {currentWeek.zone2_minutes} min Zone 2 | {currentWeek.vo2_minutes} min VO2 Max
+                </p>
+                <p>
+                  vs 4-week avg: {currentWeek.strength_sessions < avgStrength ? '↓' : currentWeek.strength_sessions > avgStrength ? '↑' : '→'} {Math.abs(currentWeek.strength_sessions - avgStrength).toFixed(0)} strength sessions, 
+                  {currentWeek.zone2_minutes < avgZone2Min ? ' ↓' : currentWeek.zone2_minutes > avgZone2Min ? ' ↑' : ' →'} {Math.abs(currentWeek.zone2_minutes - avgZone2Min).toFixed(0)} min Zone 2
+                </p>
+                <p>
+                  Strength/Cardio ratio: {(currentWeek.strength_sessions / (currentWeek.cardio_sessions || 1)).toFixed(2)}:1
+                </p>
+              </div>
+            );
+          })()}
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+      {/* View 9: Muscle Comparison */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-start justify-between gap-4 mb-2">
+            <div>
+              <CardTitle>Muscle Group Comparison</CardTitle>
+              <CardDescription>Compare sets per week across muscle groups (all groups selected by default)</CardDescription>
+            </div>
+          </div>
+          <TimeFrameSelector mode="weeks" value={muscleComparisonWeeks} onChange={setMuscleComparisonWeeks} />
+        </CardHeader>
+        <CardContent>
+          <div className="mb-4 space-y-3">
+            <MultiSelect
+              label="Select Muscle Groups"
+              options={['Chest', 'Back', 'Quads', 'Hamstrings', 'Biceps', 'Triceps', 'Shoulders', 'Glutes', 'Abs', 'Calves']}
+              selected={selectedMuscles}
+              onChange={setSelectedMuscles}
+              min={2}
+            />
+            
+            <div className="flex gap-2 flex-wrap">
+              <button
+                onClick={() => setSelectedMuscles(['Chest', 'Back'])}
+                className="px-3 py-1 rounded text-sm bg-card-border hover:bg-card-border/80 transition-colors"
+              >
+                Chest vs Back
+              </button>
+              <button
+                onClick={() => setSelectedMuscles(['Quads', 'Hamstrings'])}
+                className="px-3 py-1 rounded text-sm bg-card-border hover:bg-card-border/80 transition-colors"
+              >
+                Quads vs Hamstrings
+              </button>
+              <button
+                onClick={() => setSelectedMuscles(['Biceps', 'Triceps'])}
+                className="px-3 py-1 rounded text-sm bg-card-border hover:bg-card-border/80 transition-colors"
+              >
+                Biceps vs Triceps
+              </button>
+            </div>
+          </div>
+          
+          {errors.muscleComparison && (
+            <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 rounded text-red-400 text-sm">
+              {errors.muscleComparison}
+            </div>
+          )}
+          
+          {loadingStates.muscleComparison && (
+            <div className="h-80 flex items-center justify-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent" />
+            </div>
+          )}
+          
+          {!loadingStates.muscleComparison && selectedMuscles.length >= 2 && (
+            <div className="h-80">
+            {muscleComparison.length > 0 ? (() => {
+              // Transform data for Recharts (flatten muscle_groups)
+              const chartData = muscleComparison.map(week => ({
+                week_start: week.week_start,
+                ...week.muscle_groups
+              }));
+              
+              return (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
+                    <XAxis
+                      dataKey="week_start"
+                      stroke="#6b7280"
+                      fontSize={12}
+                      tickFormatter={(value) => formatDate(value, { month: 'short', day: 'numeric' })}
+                    />
+                    <YAxis 
+                      stroke="#6b7280" 
+                      fontSize={12}
+                      label={{ value: 'Sets per Week', angle: -90, position: 'insideLeft' }}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#12121a',
+                        border: '1px solid #1e1e2e',
+                        borderRadius: '8px',
+                      }}
+                      labelFormatter={(label) => `Week of ${formatDate(label)}`}
+                      formatter={(value: any, name: string) => [`${value} sets`, name]}
+                    />
+                    <Legend />
+                    {selectedMuscles.map((mg, idx) => {
+                      const colors = ['#0ea5e9', '#10b981', '#FF6B35', '#9B59B6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16'];
+                      return (
+                        <Line
+                          key={mg}
+                          type="monotone"
+                          dataKey={mg}
+                          stroke={colors[idx % colors.length]}
+                          strokeWidth={2}
+                          name={mg}
+                          dot={{ r: 4 }}
+                        />
+                      );
+                    })}
+                  </LineChart>
+                </ResponsiveContainer>
+              );
+            })() : (
+              <div className="flex items-center justify-center h-full text-gray-500">No data available</div>
+            )}
+          </div>
+          )}
+          
+          {!loadingStates.muscleComparison && selectedMuscles.length < 2 && (
+            <div className="h-80 flex items-center justify-center text-gray-500">
+              Please select at least 2 muscle groups to compare
+            </div>
+          )}
+          
+          {/* Comparison Stats */}
+          {muscleComparison.length > 0 && selectedMuscles.length >= 2 && (() => {
+            const averages: Record<string, number> = {};
+            selectedMuscles.forEach(mg => {
+              const values = muscleComparison.map(w => w.muscle_groups[mg] || 0);
+              averages[mg] = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+            });
+            
+            // Show stats for all selected groups, not just first two
+            const groupsList = selectedMuscles.map(mg => `${mg}: ${averages[mg].toFixed(1)} sets/week`).join(' | ');
+            const allAverages = selectedMuscles.map(mg => averages[mg]);
+            const maxAvg = Math.max(...allAverages);
+            const minAvg = Math.min(...allAverages);
+            const maxGroup = selectedMuscles.find(mg => averages[mg] === maxAvg);
+            const minGroup = selectedMuscles.find(mg => averages[mg] === minAvg);
+            const ratio = minAvg > 0 ? maxAvg / minAvg : 0;
+            const gaps = muscleComparison.map(w => {
+              const values = selectedMuscles.map(mg => w.muscle_groups[mg] || 0);
+              return Math.max(...values) - Math.min(...values);
+            });
+            const maxGap = gaps.length > 0 ? Math.max(...gaps) : 0;
+            const maxGapIdx = gaps.indexOf(maxGap);
+            const maxGapWeek = maxGapIdx >= 0 ? muscleComparison[maxGapIdx] : null;
+            const minGap = gaps.length > 0 ? Math.min(...gaps) : 0;
+            const minGapIdx = gaps.indexOf(minGap);
+            const minGapWeek = minGapIdx >= 0 ? muscleComparison[minGapIdx] : null;
+            
+            return (
+              <div className="mt-6 p-4 bg-card-border/50 rounded-lg space-y-2 text-sm">
+                <p>
+                  {groupsList}
+                </p>
+                {selectedMuscles.length === 2 ? (
+                  <p>
+                    Ratio: {ratio.toFixed(2)} ({maxGroup} {ratio > 1.2 ? 'significantly' : ratio > 1 ? 'slightly' : 'even'}-trained vs {minGroup})
+                  </p>
+                ) : (
+                  <p>
+                    Range: {minGroup} ({minAvg.toFixed(1)} sets/week) to {maxGroup} ({maxAvg.toFixed(1)} sets/week) - {ratio.toFixed(2)}x difference
+                  </p>
+                )}
+                {maxGapWeek && (
+                  <p>
+                    Biggest gap: {maxGap} sets ({formatDate(maxGapWeek.week_start, { month: 'short', day: 'numeric' })})
+                  </p>
+                )}
+                {minGapWeek && (
+                  <p>
+                    Most balanced: {minGap} sets ({formatDate(minGapWeek.week_start, { month: 'short', day: 'numeric' })})
+                  </p>
+                )}
+              </div>
+            );
+          })()}
+        </CardContent>
+      </Card>
+        </div>
+      </div>
+
+      {/* Section 2: Overview */}
       <div className="space-y-6">
         <div>
           <h2 className="text-xl font-semibold mb-4 text-gray-100">Overview</h2>
@@ -455,284 +909,10 @@ export function StrengthAnalytics() {
         </div>
       </div>
 
-      {/* Section 2: Trends & Balance */}
+      {/* Section 3: Analysis */}
       <div className="space-y-6">
         <div>
-          <h2 className="text-xl font-semibold mb-4 text-gray-100">Trends & Balance</h2>
-          
-          {/* View 8: Total Volume Trends */}
-          <Card className="mb-6">
-            <CardHeader>
-              <div className="flex items-start justify-between gap-4 mb-2">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <TrendingUpIcon className="w-5 h-5 text-accent" />
-                    Total Volume Trends
-                  </CardTitle>
-                  <CardDescription>Weekly tonnage and sets over time</CardDescription>
-                </div>
-              </div>
-              <TimeFrameSelector mode="weeks" value={volumeTrendsWeeks} onChange={setVolumeTrendsWeeks} />
-            </CardHeader>
-            <CardContent>
-              {errors.volumeTrends && (
-                <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 rounded text-red-400 text-sm">
-                  {errors.volumeTrends}
-                </div>
-              )}
-              {loadingStates.volumeTrends ? (
-                <div className="h-80 flex items-center justify-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent" />
-                </div>
-              ) : (
-                <>
-                  <div className="h-80">
-                    {volumeTrends.length > 0 ? (
-                      <ResponsiveContainer width="100%" height="100%">
-                        <ComposedChart data={volumeTrends} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
-                          <XAxis
-                            dataKey="week_start"
-                            stroke="#6b7280"
-                            fontSize={12}
-                            tickFormatter={(value) => formatDate(value, { month: 'short', day: 'numeric' })}
-                          />
-                          <YAxis
-                            yAxisId="left"
-                            stroke="#6b7280"
-                            fontSize={12}
-                            label={{ value: 'Tonnage (kg / lbs)', angle: -90, position: 'insideLeft' }}
-                          />
-                          <YAxis
-                            yAxisId="right"
-                            orientation="right"
-                            stroke="#6b7280"
-                            fontSize={12}
-                            label={{ value: 'Sets', angle: 90, position: 'insideRight' }}
-                          />
-                          <Tooltip
-                            contentStyle={{
-                              backgroundColor: '#12121a',
-                              border: '1px solid #1e1e2e',
-                              borderRadius: '8px',
-                            }}
-                            labelFormatter={(label) => `Week of ${formatDate(label)}`}
-                            formatter={(value: any, name: string) => {
-                              if (name === 'Tonnage') {
-                                const kg = value;
-                                const lbs = kg * 2.20462;
-                                return [`${kg.toLocaleString()} kg (${lbs.toLocaleString()} lbs)`, 'Tonnage'];
-                              }
-                              return [`${value}`, name];
-                            }}
-                          />
-                          <Bar yAxisId="left" dataKey="total_tonnage" fill="#FF6B35" name="Tonnage" radius={[4, 4, 0, 0]} />
-                          <Line yAxisId="right" type="monotone" dataKey="total_sets" stroke="#0ea5e9" strokeWidth={2} name="Sets" />
-                          <Legend />
-                        </ComposedChart>
-                      </ResponsiveContainer>
-                    ) : (
-                      <div className="flex items-center justify-center h-full text-gray-500">No data</div>
-                    )}
-                  </div>
-                  
-                  {/* Metrics Panel */}
-                  {volumeTrends.length > 0 && (() => {
-                    const currentWeek = volumeTrends[volumeTrends.length - 1];
-                    const fourWeekAvg = volumeTrends.slice(-4).reduce((acc, week) => ({
-                      tonnage: acc.tonnage + week.total_tonnage,
-                      sets: acc.sets + week.total_sets,
-                    }), { tonnage: 0, sets: 0 });
-                    const avgTonnage = fourWeekAvg.tonnage / 4;
-                    const avgSets = fourWeekAvg.sets / 4;
-                    const allTonnage = volumeTrends.map(w => w.total_tonnage);
-                    const allSets = volumeTrends.map(w => w.total_sets);
-                    const maxTonnage = Math.max(...allTonnage);
-                    const minTonnage = Math.min(...allTonnage);
-                    const maxTonnageWeek = volumeTrends.find(w => w.total_tonnage === maxTonnage);
-                    const minTonnageWeek = volumeTrends.find(w => w.total_tonnage === minTonnage);
-                    const trend = currentWeek.total_tonnage > avgTonnage ? '↑' : currentWeek.total_tonnage < avgTonnage ? '↓' : '→';
-                    const trendPercent = avgTonnage > 0 ? ((currentWeek.total_tonnage - avgTonnage) / avgTonnage * 100) : 0;
-                    
-                    return (
-                      <div className="mt-6 p-4 bg-card-border/50 rounded-lg space-y-2 text-sm">
-                        <p>
-                          Current week: Total volume: {formatVolumeDual(currentWeek.total_tonnage)} | {currentWeek.total_sets} sets
-                        </p>
-                        <p>
-                          4-week average: {formatVolumeDual(avgTonnage)} | {avgSets.toFixed(0)} sets
-                        </p>
-                        <p>
-                          {volumeTrendsWeeks}-week high: {formatVolumeDual(maxTonnage)} {maxTonnageWeek && `(${formatDate(maxTonnageWeek.week_start, { month: 'short', day: 'numeric' })})`}
-                        </p>
-                        <p>
-                          {volumeTrendsWeeks}-week low: {formatVolumeDual(minTonnage)} {minTonnageWeek && `(${formatDate(minTonnageWeek.week_start, { month: 'short', day: 'numeric' })})`}
-                        </p>
-                        <p>
-                          Trend: {trend} Volume {trend === '↑' ? 'increasing' : trend === '↓' ? 'decreasing' : 'stable'} {Math.abs(trendPercent).toFixed(1)}%
-                        </p>
-                        {currentWeek.week_over_week_delta_percent !== null && (
-                          <p className="text-green-500">
-                            {currentWeek.week_over_week_delta_percent > 0 ? '+' : ''}{currentWeek.week_over_week_delta_percent.toFixed(1)}% from last week
-                          </p>
-                        )}
-                      </div>
-                    );
-                  })()}
-                </>
-              )}
-            </CardContent>
-          </Card>
-          
-          {/* View 6: Training Balance */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-start justify-between gap-4 mb-2">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <Activity className="w-5 h-5 text-accent" />
-                    Training Balance
-                  </CardTitle>
-                  <CardDescription>Strength vs Cardio sessions and time</CardDescription>
-                </div>
-              </div>
-              <TimeFrameSelector mode="weeks" value={trainingBalanceWeeks} onChange={setTrainingBalanceWeeks} />
-            </CardHeader>
-            <CardContent>
-              {errors.trainingBalance && (
-                <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 rounded text-red-400 text-sm">
-                  {errors.trainingBalance}
-                </div>
-              )}
-              {loadingStates.trainingBalance ? (
-                <div className="h-64 flex items-center justify-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent" />
-                </div>
-              ) : (
-                <>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Session Count Chart */}
-            <div>
-              <h4 className="text-sm font-medium mb-4">Session Count</h4>
-              <div className="h-64">
-                {trainingBalance.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={trainingBalance} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
-                      <XAxis
-                        dataKey="week_start"
-                        stroke="#6b7280"
-                        fontSize={12}
-                        tickFormatter={(value) => formatDate(value, { month: 'short', day: 'numeric' })}
-                      />
-                      <YAxis 
-                        stroke="#6b7280" 
-                        fontSize={12}
-                        label={{ value: 'Sessions', angle: -90, position: 'insideLeft' }}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: '#12121a',
-                          border: '1px solid #1e1e2e',
-                          borderRadius: '8px',
-                        }}
-                        labelFormatter={(label) => `Week of ${formatDate(label)}`}
-                        formatter={(value: any, name: string) => [`${value} sessions`, name]}
-                      />
-                      <Bar dataKey="strength_sessions" stackId="a" fill="#FF6B35" name="Strength" />
-                      <Bar dataKey="cardio_sessions" stackId="a" fill="#2ECC71" name="Cardio" />
-                      <Legend />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex items-center justify-center h-full text-gray-500">No data</div>
-                )}
-              </div>
-            </div>
-            
-            {/* Training Time Chart */}
-            <div>
-              <h4 className="text-sm font-medium mb-4">Training Time (minutes)</h4>
-              <div className="h-64">
-                {trainingBalance.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={trainingBalance} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
-                      <XAxis
-                        dataKey="week_start"
-                        stroke="#6b7280"
-                        fontSize={12}
-                        tickFormatter={(value) => formatDate(value, { month: 'short', day: 'numeric' })}
-                      />
-                      <YAxis 
-                        stroke="#6b7280" 
-                        fontSize={12}
-                        label={{ value: 'Minutes', angle: -90, position: 'insideLeft' }}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: '#12121a',
-                          border: '1px solid #1e1e2e',
-                          borderRadius: '8px',
-                        }}
-                        labelFormatter={(label) => `Week of ${formatDate(label)}`}
-                        formatter={(value: any, name: string) => [`${value} min`, name]}
-                      />
-                      <Bar dataKey="strength_minutes" fill="#FF6B35" name="Strength" />
-                      <Bar dataKey="zone2_minutes" fill="#2ECC71" name="Zone 2" />
-                      <Bar dataKey="vo2_minutes" fill="#1a8a5e" name="VO2 Max" />
-                      <Legend />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex items-center justify-center h-full text-gray-500">No data</div>
-                )}
-              </div>
-            </div>
-          </div>
-          
-          {/* Context Panel */}
-          {trainingBalance.length > 0 && (() => {
-            const currentWeek = trainingBalance[trainingBalance.length - 1];
-            const fourWeekAvg = trainingBalance.slice(-4).reduce((acc, week) => ({
-              strength: acc.strength + week.strength_sessions,
-              cardio: acc.cardio + week.cardio_sessions,
-              strengthMin: acc.strengthMin + week.strength_minutes,
-              zone2Min: acc.zone2Min + week.zone2_minutes,
-            }), { strength: 0, cardio: 0, strengthMin: 0, zone2Min: 0 });
-            const avgStrength = fourWeekAvg.strength / 4;
-            const avgCardio = fourWeekAvg.cardio / 4;
-            const avgStrengthMin = fourWeekAvg.strengthMin / 4;
-            const avgZone2Min = fourWeekAvg.zone2Min / 4;
-            
-            return (
-              <div className="mt-6 p-4 bg-card-border/50 rounded-lg space-y-2 text-sm">
-                <p>
-                  This week: {currentWeek.strength_sessions} strength, {currentWeek.zone2_sessions} Zone 2, {currentWeek.vo2_sessions} VO2 Max
-                </p>
-                <p>
-                  Duration: {currentWeek.strength_minutes} min strength | {currentWeek.zone2_minutes} min Zone 2 | {currentWeek.vo2_minutes} min VO2 Max
-                </p>
-                <p>
-                  vs 4-week avg: {currentWeek.strength_sessions < avgStrength ? '↓' : currentWeek.strength_sessions > avgStrength ? '↑' : '→'} {Math.abs(currentWeek.strength_sessions - avgStrength).toFixed(0)} strength sessions, 
-                  {currentWeek.zone2_minutes < avgZone2Min ? ' ↓' : currentWeek.zone2_minutes > avgZone2Min ? ' ↑' : ' →'} {Math.abs(currentWeek.zone2_minutes - avgZone2Min).toFixed(0)} min Zone 2
-                </p>
-                <p>
-                  Strength/Cardio ratio: {(currentWeek.strength_sessions / (currentWeek.cardio_sessions || 1)).toFixed(2)}:1
-                </p>
-              </div>
-            );
-          })()}
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-      {/* Section 3: Frequency & Analysis */}
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-xl font-semibold mb-4 text-gray-100">Frequency & Analysis</h2>
+          <h2 className="text-xl font-semibold mb-4 text-gray-100">Analysis</h2>
           
               <Card className="mb-6">
             <CardHeader>
@@ -829,168 +1009,6 @@ export function StrengthAnalytics() {
               )}
             </CardContent>
           </Card>
-        </div>
-
-      {/* View 9: Muscle Comparison */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-start justify-between gap-4 mb-2">
-            <div>
-              <CardTitle>Muscle Group Comparison</CardTitle>
-              <CardDescription>Compare sets per week across muscle groups (select 2-4 groups)</CardDescription>
-            </div>
-          </div>
-          <TimeFrameSelector mode="weeks" value={muscleComparisonWeeks} onChange={setMuscleComparisonWeeks} />
-        </CardHeader>
-        <CardContent>
-          <div className="mb-4 space-y-3">
-            <MultiSelect
-              label="Select Muscle Groups"
-              options={['Chest', 'Back', 'Quads', 'Hamstrings', 'Biceps', 'Triceps', 'Shoulders', 'Glutes', 'Abs', 'Calves']}
-              selected={selectedMuscles}
-              onChange={setSelectedMuscles}
-              min={2}
-              max={4}
-            />
-            
-            <div className="flex gap-2 flex-wrap">
-              <button
-                onClick={() => setSelectedMuscles(['Chest', 'Back'])}
-                className="px-3 py-1 rounded text-sm bg-card-border hover:bg-card-border/80 transition-colors"
-              >
-                Chest vs Back
-              </button>
-              <button
-                onClick={() => setSelectedMuscles(['Quads', 'Hamstrings'])}
-                className="px-3 py-1 rounded text-sm bg-card-border hover:bg-card-border/80 transition-colors"
-              >
-                Quads vs Hamstrings
-              </button>
-              <button
-                onClick={() => setSelectedMuscles(['Biceps', 'Triceps'])}
-                className="px-3 py-1 rounded text-sm bg-card-border hover:bg-card-border/80 transition-colors"
-              >
-                Biceps vs Triceps
-              </button>
-            </div>
-          </div>
-          
-          {errors.muscleComparison && (
-            <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 rounded text-red-400 text-sm">
-              {errors.muscleComparison}
-            </div>
-          )}
-          
-          {loadingStates.muscleComparison && (
-            <div className="h-80 flex items-center justify-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent" />
-            </div>
-          )}
-          
-          {!loadingStates.muscleComparison && selectedMuscles.length >= 2 && (
-            <div className="h-80">
-            {muscleComparison.length > 0 ? (() => {
-              // Transform data for Recharts (flatten muscle_groups)
-              const chartData = muscleComparison.map(week => ({
-                week_start: week.week_start,
-                ...week.muscle_groups
-              }));
-              
-              return (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
-                    <XAxis
-                      dataKey="week_start"
-                      stroke="#6b7280"
-                      fontSize={12}
-                      tickFormatter={(value) => formatDate(value, { month: 'short', day: 'numeric' })}
-                    />
-                    <YAxis 
-                      stroke="#6b7280" 
-                      fontSize={12}
-                      label={{ value: 'Sets per Week', angle: -90, position: 'insideLeft' }}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: '#12121a',
-                        border: '1px solid #1e1e2e',
-                        borderRadius: '8px',
-                      }}
-                      labelFormatter={(label) => `Week of ${formatDate(label)}`}
-                      formatter={(value: any, name: string) => [`${value} sets`, name]}
-                    />
-                    <Legend />
-                    {selectedMuscles.map((mg, idx) => {
-                      const colors = ['#0ea5e9', '#10b981', '#FF6B35', '#9B59B6'];
-                      return (
-                        <Line
-                          key={mg}
-                          type="monotone"
-                          dataKey={mg}
-                          stroke={colors[idx % colors.length]}
-                          strokeWidth={2}
-                          name={mg}
-                          dot={{ r: 4 }}
-                        />
-                      );
-                    })}
-                  </LineChart>
-                </ResponsiveContainer>
-              );
-            })() : (
-              <div className="flex items-center justify-center h-full text-gray-500">No data available</div>
-            )}
-          </div>
-          )}
-          
-          {!loadingStates.muscleComparison && selectedMuscles.length < 2 && (
-            <div className="h-80 flex items-center justify-center text-gray-500">
-              Please select at least 2 muscle groups to compare
-            </div>
-          )}
-          
-          {/* Comparison Stats */}
-          {muscleComparison.length > 0 && selectedMuscles.length >= 2 && (() => {
-            const averages: Record<string, number> = {};
-            selectedMuscles.forEach(mg => {
-              const values = muscleComparison.map(w => w.muscle_groups[mg] || 0);
-              averages[mg] = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
-            });
-            
-            const [mg1, mg2] = selectedMuscles;
-            const ratio = averages[mg2] > 0 ? averages[mg1] / averages[mg2] : 0;
-            const gaps = muscleComparison.map(w => Math.abs((w.muscle_groups[mg1] || 0) - (w.muscle_groups[mg2] || 0)));
-            const maxGap = gaps.length > 0 ? Math.max(...gaps) : 0;
-            const maxGapIdx = gaps.indexOf(maxGap);
-            const maxGapWeek = maxGapIdx >= 0 ? muscleComparison[maxGapIdx] : null;
-            const minGap = gaps.length > 0 ? Math.min(...gaps) : 0;
-            const minGapIdx = gaps.indexOf(minGap);
-            const minGapWeek = minGapIdx >= 0 ? muscleComparison[minGapIdx] : null;
-            
-            return (
-              <div className="mt-6 p-4 bg-card-border/50 rounded-lg space-y-2 text-sm">
-                <p>
-                  {mg1}: {averages[mg1].toFixed(1)} sets/week avg | {mg2}: {averages[mg2].toFixed(1)} sets/week avg
-                </p>
-                <p>
-                  Ratio: {ratio.toFixed(2)} ({mg1} {ratio > 1.2 ? 'significantly' : ratio < 0.8 ? 'significantly under' : ratio > 1 ? 'slightly' : 'slightly under'}-trained vs {mg2})
-                </p>
-                {maxGapWeek && (
-                  <p>
-                    Biggest gap: {maxGap} sets ({formatDate(maxGapWeek.week_start, { month: 'short', day: 'numeric' })})
-                  </p>
-                )}
-                {minGapWeek && (
-                  <p>
-                    Most balanced: {minGap} sets ({formatDate(minGapWeek.week_start, { month: 'short', day: 'numeric' })})
-                  </p>
-                )}
-              </div>
-            );
-          })()}
-        </CardContent>
-      </Card>
         </div>
       </div>
     </div>

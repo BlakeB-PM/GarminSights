@@ -11,7 +11,7 @@ from app.models.schemas import (
     KeyLiftCard, TrainingBalanceData, MuscleFrequency,
     VolumeTrendData, MuscleComparisonData
 )
-from app.services.muscle_mapping import get_primary_muscle_group
+from app.services.muscle_mapping import get_primary_muscle_group, get_all_muscle_groups
 
 router = APIRouter(prefix="/api/strength", tags=["strength"])
 
@@ -208,8 +208,11 @@ async def get_volume_by_muscle_group(days: int = Query(30, ge=7, le=90)):
     """
     Get volume breakdown by muscle group (inferred from exercise names).
     
-    Note: This is a simple keyword-based classification.
+    Uses muscle_mapping service as single source of truth.
+    Exercises count toward ALL relevant muscle groups (primary + secondary).
     """
+    from app.services.muscle_mapping import MUSCLE_GROUPS
+    
     start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
     
     # Get all exercises with their volumes
@@ -227,36 +230,32 @@ async def get_volume_by_muscle_group(days: int = Query(30, ge=7, le=90)):
         (start_date,)
     )
     
-    # Simple keyword-based muscle group classification
-    muscle_groups = {
-        "chest": ["bench", "chest", "fly", "push up", "pushup", "pec"],
-        "back": ["row", "pull", "lat", "back", "deadlift"],
-        "shoulders": ["shoulder", "press", "delt", "lateral raise", "ohp"],
-        "biceps": ["curl", "bicep"],
-        "triceps": ["tricep", "extension", "pushdown", "skull"],
-        "legs": ["squat", "leg", "lunge", "calf", "hamstring", "quad", "glute"],
-        "core": ["ab", "core", "plank", "crunch", "sit up"]
-    }
-    
-    result = {group: {"volume": 0, "sets": 0, "exercises": []} for group in muscle_groups}
+    # Initialize result with all muscle groups (lowercase for frontend compatibility)
+    # Map from capitalized MUSCLE_GROUPS to lowercase keys
+    result = {group.lower(): {"volume": 0, "sets": 0, "exercises": []} for group in MUSCLE_GROUPS}
     result["other"] = {"volume": 0, "sets": 0, "exercises": []}
     
     for ex in exercises:
-        name = (ex["exercise_name"] or "").lower()
-        categorized = False
+        exercise_name = ex["exercise_name"] or ""
+        if not exercise_name:
+            continue
         
-        for group, keywords in muscle_groups.items():
-            if any(kw in name for kw in keywords):
-                result[group]["volume"] += ex["total_volume"] or 0
-                result[group]["sets"] += ex["total_sets"] or 0
-                result[group]["exercises"].append(ex["exercise_name"])
-                categorized = True
-                break
+        # Get ALL muscle groups (primary + secondary) for this exercise
+        muscle_groups = get_all_muscle_groups(exercise_name)
         
-        if not categorized:
-            result["other"]["volume"] += ex["total_volume"] or 0
-            result["other"]["sets"] += ex["total_sets"] or 0
-            result["other"]["exercises"].append(ex["exercise_name"])
+        # Count this exercise toward ALL relevant muscle groups
+        for muscle_group in muscle_groups:
+            if muscle_group == "Other":
+                group_key = "other"
+            else:
+                group_key = muscle_group.lower()
+                # Ensure the group exists (in case MUSCLE_GROUPS list changes)
+                if group_key not in result:
+                    result[group_key] = {"volume": 0, "sets": 0, "exercises": []}
+            
+            result[group_key]["volume"] += ex["total_volume"] or 0
+            result[group_key]["sets"] += ex["total_sets"] or 0
+            result[group_key]["exercises"].append(exercise_name)
     
     return result
 
@@ -435,9 +434,37 @@ async def get_training_balance(weeks: int = Query(12, ge=4, le=52)):
     Get training balance data (strength vs cardio) by week.
     
     Returns weekly aggregations of sessions and minutes.
+    Includes all data up to current date.
     """
-    weeks_ago = datetime.now() - timedelta(weeks=weeks)
-    start_date = weeks_ago.strftime("%Y-%m-%d")
+    now = datetime.now()
+    weeks_ago = now - timedelta(weeks=weeks)
+    # Use datetime string for comparison (ISO format: YYYY-MM-DD HH:MM:SS)
+    start_datetime = weeks_ago.strftime("%Y-%m-%d 00:00:00")
+    
+    # Calculate the range of weeks to include (from start week to current week)
+    start_week_start = get_week_start(weeks_ago)
+    current_week_start = get_week_start(now)
+    
+    # Initialize all weeks in the range with zero values
+    # Calculate number of weeks between start and current (inclusive)
+    days_diff = (current_week_start - start_week_start).days
+    num_weeks = (days_diff // 7) + 1  # +1 to include both start and end weeks
+    
+    weekly_data = {}
+    for i in range(num_weeks):
+        week_start = start_week_start + timedelta(days=i * 7)
+        week_key = week_start.isoformat()
+        weekly_data[week_key] = {
+            "week_start": week_start,
+            "week_end": week_start + timedelta(days=6),
+            "strength_sessions": 0,
+            "cardio_sessions": 0,
+            "zone2_sessions": 0,
+            "vo2_sessions": 0,
+            "strength_minutes": 0,
+            "zone2_minutes": 0,
+            "vo2_minutes": 0,
+        }
     
     # Get all activities in the period
     activities = execute_query(
@@ -450,13 +477,12 @@ async def get_training_balance(weeks: int = Query(12, ge=4, le=52)):
             a.duration_seconds
         FROM activities a
         WHERE a.start_time >= ?
-        ORDER BY a.start_time
+        ORDER BY a.start_time DESC
         """,
-        (start_date,)
+        (start_datetime,)
     )
     
-    # Group by week
-    weekly_data = {}
+    # Populate weeks with actual data
     for activity in activities:
         start_time = datetime.fromisoformat(activity["start_time"].replace("Z", "+00:00"))
         if start_time.tzinfo:
@@ -465,18 +491,9 @@ async def get_training_balance(weeks: int = Query(12, ge=4, le=52)):
         week_start = get_week_start(start_time)
         week_key = week_start.isoformat()
         
+        # Only add to weeks that are in our range
         if week_key not in weekly_data:
-            weekly_data[week_key] = {
-                "week_start": week_start,
-                "week_end": week_start + timedelta(days=6),
-                "strength_sessions": 0,
-                "cardio_sessions": 0,
-                "zone2_sessions": 0,
-                "vo2_sessions": 0,
-                "strength_minutes": 0,
-                "zone2_minutes": 0,
-                "vo2_minutes": 0,
-            }
+            continue
         
         week = weekly_data[week_key]
         duration_minutes = int((activity["duration_seconds"] or 0) / 60)
@@ -563,17 +580,21 @@ async def get_training_frequency(
     
     for set_data in sets_data:
         exercise_name = set_data["exercise_name"]
-        muscle_group = get_primary_muscle_group(exercise_name)
+        # Get ALL muscle groups (primary + secondary) for this exercise
+        muscle_groups = get_all_muscle_groups(exercise_name)
         
-        if muscle_group in muscle_stats:
-            workout_date = datetime.strptime(set_data["workout_date"], "%Y-%m-%d").date()
-            muscle_stats[muscle_group]["sessions"].add(workout_date)
-            muscle_stats[muscle_group]["total_sets"] += set_data["sets_count"]
-            muscle_stats[muscle_group]["total_volume"] += (set_data["volume"] or 0)
-            
-            if (muscle_stats[muscle_group]["last_date"] is None or 
-                workout_date > muscle_stats[muscle_group]["last_date"]):
-                muscle_stats[muscle_group]["last_date"] = workout_date
+        workout_date = datetime.strptime(set_data["workout_date"], "%Y-%m-%d").date()
+        
+        # Count toward ALL relevant muscle groups
+        for muscle_group in muscle_groups:
+            if muscle_group in muscle_stats:
+                muscle_stats[muscle_group]["sessions"].add(workout_date)
+                muscle_stats[muscle_group]["total_sets"] += set_data["sets_count"]
+                muscle_stats[muscle_group]["total_volume"] += (set_data["volume"] or 0)
+                
+                if (muscle_stats[muscle_group]["last_date"] is None or 
+                    workout_date > muscle_stats[muscle_group]["last_date"]):
+                    muscle_stats[muscle_group]["last_date"] = workout_date
     
     # Calculate averages and days since last
     result = []
@@ -616,9 +637,40 @@ async def get_volume_trends(weeks: int = Query(12, ge=4, le=52)):
     Get total volume trends by week.
     
     Returns weekly tonnage and sets with week-over-week deltas.
+    Includes all data up to current date.
     """
-    weeks_ago = datetime.now() - timedelta(weeks=weeks)
-    start_date = weeks_ago.strftime("%Y-%m-%d")
+    now = datetime.now()
+    weeks_ago = now - timedelta(weeks=weeks)
+    # Use datetime string for comparison (ISO format: YYYY-MM-DD HH:MM:SS)
+    start_datetime = weeks_ago.strftime("%Y-%m-%d 00:00:00")
+    
+    # Calculate the range of weeks to include (from start week to current week)
+    start_week_start = get_week_start(weeks_ago)
+    current_week_start = get_week_start(now)
+    
+    # Initialize all weeks in the range with zero values
+    # Calculate number of weeks between start and current (inclusive)
+    days_diff = (current_week_start - start_week_start).days
+    num_weeks = (days_diff // 7) + 1  # +1 to include both start and end weeks
+    
+    # Ensure we have at least the requested number of weeks
+    # If the calculation gives us fewer weeks, extend to ensure we have the full range
+    if num_weeks < weeks:
+        # Extend backwards to ensure we have the full requested range
+        start_week_start = current_week_start - timedelta(days=(weeks - 1) * 7)
+        days_diff = (current_week_start - start_week_start).days
+        num_weeks = (days_diff // 7) + 1
+    
+    weekly_totals = {}
+    for i in range(num_weeks):
+        week_start = start_week_start + timedelta(days=i * 7)
+        week_key = week_start.isoformat()
+        weekly_totals[week_key] = {
+            "week_start": week_start,
+            "week_end": week_start + timedelta(days=6),
+            "tonnage": 0.0,
+            "sets": 0
+        }
     
     # Get weekly aggregations
     weekly_data = execute_query(
@@ -632,36 +684,29 @@ async def get_volume_trends(weeks: int = Query(12, ge=4, le=52)):
         WHERE a.start_time >= ?
           AND ss.weight_kg > 0
         GROUP BY DATE(a.start_time)
-        ORDER BY workout_date
+        ORDER BY workout_date DESC
         """,
-        (start_date,)
+        (start_datetime,)
     )
     
-    # Group by week
-    weekly_totals = {}
+    # Populate weeks with actual data
     for data in weekly_data:
         workout_date = datetime.strptime(data["workout_date"], "%Y-%m-%d")
         week_start = get_week_start(workout_date)
         week_key = week_start.isoformat()
         
-        if week_key not in weekly_totals:
-            weekly_totals[week_key] = {
-                "week_start": week_start,
-                "week_end": week_start + timedelta(days=6),
-                "tonnage": 0.0,
-                "sets": 0
-            }
-        
-        weekly_totals[week_key]["tonnage"] += (data["tonnage"] or 0)
-        weekly_totals[week_key]["sets"] += (data["sets_count"] or 0)
+        # Only add to weeks that are in our range
+        if week_key in weekly_totals:
+            weekly_totals[week_key]["tonnage"] += (data["tonnage"] or 0)
+            weekly_totals[week_key]["sets"] += (data["sets_count"] or 0)
     
     # Convert to list and calculate deltas
+    # Sort by week_start to ensure chronological order
+    sorted_weeks = sorted(weekly_totals.items(), key=lambda x: x[1]["week_start"])
     result = []
     prev_tonnage = None
     
-    for week_key in sorted(weekly_totals.keys()):
-        week = weekly_totals[week_key]
-        
+    for week_key, week in sorted_weeks:
         delta_percent = None
         if prev_tonnage is not None and prev_tonnage > 0:
             delta_percent = ((week["tonnage"] - prev_tonnage) / prev_tonnage) * 100
@@ -694,16 +739,37 @@ async def get_muscle_comparison(
     # Parse muscle groups
     selected_groups = [mg.strip() for mg in muscle_groups.split(",")]
     
-    # Validate
-    if len(selected_groups) < 2 or len(selected_groups) > 4:
-        raise ValueError("Must select 2-4 muscle groups")
+    # Validate (allow up to 10 groups now that frontend defaults to all)
+    if len(selected_groups) < 2 or len(selected_groups) > 10:
+        raise ValueError("Must select 2-10 muscle groups")
     
     for mg in selected_groups:
         if mg not in MUSCLE_GROUPS:
             raise ValueError(f"Invalid muscle group: {mg}")
     
-    weeks_ago = datetime.now() - timedelta(weeks=weeks)
-    start_date = weeks_ago.strftime("%Y-%m-%d")
+    now = datetime.now()
+    weeks_ago = now - timedelta(weeks=weeks)
+    # Use datetime string for comparison (ISO format: YYYY-MM-DD HH:MM:SS)
+    start_datetime = weeks_ago.strftime("%Y-%m-%d 00:00:00")
+    
+    # Calculate the range of weeks to include (from start week to current week)
+    start_week_start = get_week_start(weeks_ago)
+    current_week_start = get_week_start(now)
+    
+    # Initialize all weeks in the range with zero values
+    # Calculate number of weeks between start and current (inclusive)
+    days_diff = (current_week_start - start_week_start).days
+    num_weeks = (days_diff // 7) + 1  # +1 to include both start and end weeks
+    
+    weekly_data = {}
+    for i in range(num_weeks):
+        week_start = start_week_start + timedelta(days=i * 7)
+        week_key = week_start.isoformat()
+        weekly_data[week_key] = {
+            "week_start": week_start,
+            "week_end": week_start + timedelta(days=6),
+            "muscle_groups": {mg: 0 for mg in selected_groups}
+        }
     
     # Get all strength sets with dates
     sets_data = execute_query(
@@ -718,32 +784,29 @@ async def get_muscle_comparison(
           AND ss.exercise_name IS NOT NULL
           AND ss.weight_kg > 0
         GROUP BY ss.exercise_name, DATE(a.start_time)
-        ORDER BY workout_date
+        ORDER BY workout_date DESC
         """,
-        (start_date,)
+        (start_datetime,)
     )
     
-    # Group by week and muscle group
-    weekly_data = {}
+    # Populate weeks with actual data
     for set_data in sets_data:
         exercise_name = set_data["exercise_name"]
-        muscle_group = get_primary_muscle_group(exercise_name)
-        
-        if muscle_group not in selected_groups:
-            continue
+        # Get ALL muscle groups (primary + secondary) for this exercise
+        muscle_groups = get_all_muscle_groups(exercise_name)
         
         workout_date = datetime.strptime(set_data["workout_date"], "%Y-%m-%d")
         week_start = get_week_start(workout_date)
         week_key = week_start.isoformat()
         
+        # Only add to weeks that are in our range
         if week_key not in weekly_data:
-            weekly_data[week_key] = {
-                "week_start": week_start,
-                "week_end": week_start + timedelta(days=6),
-                "muscle_groups": {mg: 0 for mg in selected_groups}
-            }
+            continue
         
-        weekly_data[week_key]["muscle_groups"][muscle_group] += set_data["sets_count"]
+        # Count toward ALL relevant muscle groups that are in selected_groups
+        for muscle_group in muscle_groups:
+            if muscle_group in selected_groups:
+                weekly_data[week_key]["muscle_groups"][muscle_group] += set_data["sets_count"]
     
     # Convert to response models
     result = []
