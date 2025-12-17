@@ -53,7 +53,13 @@ export function StrengthAnalytics() {
   const [volumeTrends, setVolumeTrends] = useState<VolumeTrendData[]>([]);
   const [muscleComparison, setMuscleComparison] = useState<MuscleComparisonData[]>([]);
   const [selectedMuscles, setSelectedMuscles] = useState<string[]>(['Chest', 'Back', 'Shoulders', 'Triceps', 'Biceps', 'Abs', 'Quads', 'Hamstrings', 'Glutes', 'Calves']);
+  const [comparisonViewMode, setComparisonViewMode] = useState<'individual' | 'upperLower' | 'bodyRegions'>('individual');
   const [frequencySortBy, setFrequencySortBy] = useState<'frequency' | 'days_since' | 'volume' | 'alphabetical'>('frequency');
+  
+  // Muscle group mappings for aggregated views
+  const UPPER_BODY_GROUPS = ['Chest', 'Back', 'Shoulders', 'Triceps', 'Biceps', 'Abs'];
+  const LOWER_BODY_GROUPS = ['Quads', 'Hamstrings', 'Glutes', 'Calves'];
+  const ALL_MUSCLE_GROUPS = ['Chest', 'Back', 'Quads', 'Hamstrings', 'Biceps', 'Triceps', 'Shoulders', 'Glutes', 'Abs', 'Calves'];
   
   // Time frame state management
   const [volumeTrendsWeeks, setVolumeTrendsWeeks] = useState<4 | 8 | 12 | 16 | 24 | 52>(12);
@@ -77,6 +83,67 @@ export function StrengthAnalytics() {
   });
   
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Helper function to aggregate muscle comparison data based on view mode
+  const aggregateMuscleComparison = (
+    data: MuscleComparisonData[],
+    viewMode: 'individual' | 'upperLower' | 'bodyRegions'
+  ): MuscleComparisonData[] => {
+    if (viewMode === 'individual') {
+      return data;
+    }
+
+    return data.map(week => {
+      const aggregated: MuscleComparisonData = {
+        week_start: week.week_start,
+        week_end: week.week_end,
+        muscle_groups: {},
+      };
+
+      if (viewMode === 'upperLower') {
+        // Aggregate upper body
+        aggregated.muscle_groups['Upper Body'] = UPPER_BODY_GROUPS.reduce(
+          (sum, group) => sum + (week.muscle_groups[group] || 0),
+          0
+        );
+        // Aggregate lower body
+        aggregated.muscle_groups['Lower Body'] = LOWER_BODY_GROUPS.reduce(
+          (sum, group) => sum + (week.muscle_groups[group] || 0),
+          0
+        );
+      } else if (viewMode === 'bodyRegions') {
+        // Aggregate by body regions
+        aggregated.muscle_groups['Arms'] = ['Biceps', 'Triceps'].reduce(
+          (sum, group) => sum + (week.muscle_groups[group] || 0),
+          0
+        );
+        aggregated.muscle_groups['Chest'] = week.muscle_groups['Chest'] || 0;
+        aggregated.muscle_groups['Back'] = week.muscle_groups['Back'] || 0;
+        aggregated.muscle_groups['Legs'] = LOWER_BODY_GROUPS.reduce(
+          (sum, group) => sum + (week.muscle_groups[group] || 0),
+          0
+        );
+      }
+
+      return aggregated;
+    });
+  };
+
+  // Auto-select muscle groups when view mode changes
+  useEffect(() => {
+    if (comparisonViewMode === 'individual') {
+      // Keep current selection or default to all groups
+      if (selectedMuscles.length < 2) {
+        setSelectedMuscles(ALL_MUSCLE_GROUPS);
+      }
+    } else if (comparisonViewMode === 'upperLower') {
+      // Select all upper + lower groups to fetch all data
+      setSelectedMuscles([...UPPER_BODY_GROUPS, ...LOWER_BODY_GROUPS]);
+    } else if (comparisonViewMode === 'bodyRegions') {
+      // Select all groups needed for regions
+      setSelectedMuscles(ALL_MUSCLE_GROUPS);
+    }
+  }, [comparisonViewMode]);
 
   // Load exercises list and initial data (non-time-frame dependent)
   useEffect(() => {
@@ -573,34 +640,61 @@ export function StrengthAnalytics() {
         </CardHeader>
         <CardContent>
           <div className="mb-4 space-y-3">
-            <MultiSelect
-              label="Select Muscle Groups"
-              options={['Chest', 'Back', 'Quads', 'Hamstrings', 'Biceps', 'Triceps', 'Shoulders', 'Glutes', 'Abs', 'Calves']}
-              selected={selectedMuscles}
-              onChange={setSelectedMuscles}
-              min={2}
-            />
-            
-            <div className="flex gap-2 flex-wrap">
+            {/* View Mode Selector */}
+            <div className="flex gap-2 mb-3">
               <button
-                onClick={() => setSelectedMuscles(['Chest', 'Back'])}
-                className="px-3 py-1 rounded text-sm bg-card-border hover:bg-card-border/80 transition-colors"
+                onClick={() => setComparisonViewMode('individual')}
+                className={cn("px-3 py-1 rounded text-sm transition-colors", comparisonViewMode === 'individual' ? 'bg-accent text-white' : 'bg-card-border hover:bg-card-border/80')}
               >
-                Chest vs Back
+                Individual
               </button>
               <button
-                onClick={() => setSelectedMuscles(['Quads', 'Hamstrings'])}
-                className="px-3 py-1 rounded text-sm bg-card-border hover:bg-card-border/80 transition-colors"
+                onClick={() => setComparisonViewMode('upperLower')}
+                className={cn("px-3 py-1 rounded text-sm transition-colors", comparisonViewMode === 'upperLower' ? 'bg-accent text-white' : 'bg-card-border hover:bg-card-border/80')}
               >
-                Quads vs Hamstrings
+                Upper/Lower
               </button>
               <button
-                onClick={() => setSelectedMuscles(['Biceps', 'Triceps'])}
-                className="px-3 py-1 rounded text-sm bg-card-border hover:bg-card-border/80 transition-colors"
+                onClick={() => setComparisonViewMode('bodyRegions')}
+                className={cn("px-3 py-1 rounded text-sm transition-colors", comparisonViewMode === 'bodyRegions' ? 'bg-accent text-white' : 'bg-card-border hover:bg-card-border/80')}
               >
-                Biceps vs Triceps
+                Body Regions
               </button>
             </div>
+
+            {/* MultiSelect - only show in individual mode */}
+            {comparisonViewMode === 'individual' && (
+              <>
+                <MultiSelect
+                  label="Select Muscle Groups"
+                  options={['Chest', 'Back', 'Quads', 'Hamstrings', 'Biceps', 'Triceps', 'Shoulders', 'Glutes', 'Abs', 'Calves']}
+                  selected={selectedMuscles}
+                  onChange={setSelectedMuscles}
+                  min={2}
+                />
+                
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    onClick={() => setSelectedMuscles(['Chest', 'Back'])}
+                    className="px-3 py-1 rounded text-sm bg-card-border hover:bg-card-border/80 transition-colors"
+                  >
+                    Chest vs Back
+                  </button>
+                  <button
+                    onClick={() => setSelectedMuscles(['Quads', 'Hamstrings'])}
+                    className="px-3 py-1 rounded text-sm bg-card-border hover:bg-card-border/80 transition-colors"
+                  >
+                    Quads vs Hamstrings
+                  </button>
+                  <button
+                    onClick={() => setSelectedMuscles(['Biceps', 'Triceps'])}
+                    className="px-3 py-1 rounded text-sm bg-card-border hover:bg-card-border/80 transition-colors"
+                  >
+                    Biceps vs Triceps
+                  </button>
+                </div>
+              </>
+            )}
           </div>
           
           {errors.muscleComparison && (
@@ -618,8 +712,21 @@ export function StrengthAnalytics() {
           {!loadingStates.muscleComparison && selectedMuscles.length >= 2 && (
             <div className="h-80">
             {muscleComparison.length > 0 ? (() => {
+              // Aggregate data based on view mode
+              const aggregatedData = aggregateMuscleComparison(muscleComparison, comparisonViewMode);
+              
+              // Determine which groups to display
+              let displayGroups: string[];
+              if (comparisonViewMode === 'upperLower') {
+                displayGroups = ['Upper Body', 'Lower Body'];
+              } else if (comparisonViewMode === 'bodyRegions') {
+                displayGroups = ['Arms', 'Chest', 'Back', 'Legs'];
+              } else {
+                displayGroups = selectedMuscles;
+              }
+              
               // Transform data for Recharts (flatten muscle_groups)
-              const chartData = muscleComparison.map(week => ({
+              const chartData = aggregatedData.map(week => ({
                 week_start: week.week_start,
                 ...week.muscle_groups
               }));
@@ -649,7 +756,7 @@ export function StrengthAnalytics() {
                       formatter={(value: any, name: string) => [`${value} sets`, name]}
                     />
                     <Legend />
-                    {selectedMuscles.map((mg, idx) => {
+                    {displayGroups.map((mg, idx) => {
                       const colors = ['#0ea5e9', '#10b981', '#FF6B35', '#9B59B6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16'];
                       return (
                         <Line
@@ -672,7 +779,7 @@ export function StrengthAnalytics() {
           </div>
           )}
           
-          {!loadingStates.muscleComparison && selectedMuscles.length < 2 && (
+          {!loadingStates.muscleComparison && comparisonViewMode === 'individual' && selectedMuscles.length < 2 && (
             <div className="h-80 flex items-center justify-center text-gray-500">
               Please select at least 2 muscle groups to compare
             </div>
@@ -680,37 +787,50 @@ export function StrengthAnalytics() {
           
           {/* Comparison Stats */}
           {muscleComparison.length > 0 && selectedMuscles.length >= 2 && (() => {
+            // Aggregate data based on view mode
+            const aggregatedData = aggregateMuscleComparison(muscleComparison, comparisonViewMode);
+            
+            // Determine which groups to display
+            let displayGroups: string[];
+            if (comparisonViewMode === 'upperLower') {
+              displayGroups = ['Upper Body', 'Lower Body'];
+            } else if (comparisonViewMode === 'bodyRegions') {
+              displayGroups = ['Arms', 'Chest', 'Back', 'Legs'];
+            } else {
+              displayGroups = selectedMuscles;
+            }
+            
             const averages: Record<string, number> = {};
-            selectedMuscles.forEach(mg => {
-              const values = muscleComparison.map(w => w.muscle_groups[mg] || 0);
+            displayGroups.forEach(mg => {
+              const values = aggregatedData.map(w => w.muscle_groups[mg] || 0);
               averages[mg] = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
             });
             
-            // Show stats for all selected groups, not just first two
-            const groupsList = selectedMuscles.map(mg => `${mg}: ${averages[mg].toFixed(1)} sets/week`).join(' | ');
-            const allAverages = selectedMuscles.map(mg => averages[mg]);
+            // Show stats for all display groups
+            const groupsList = displayGroups.map(mg => `${mg}: ${averages[mg].toFixed(1)} sets/week`).join(' | ');
+            const allAverages = displayGroups.map(mg => averages[mg]);
             const maxAvg = Math.max(...allAverages);
             const minAvg = Math.min(...allAverages);
-            const maxGroup = selectedMuscles.find(mg => averages[mg] === maxAvg);
-            const minGroup = selectedMuscles.find(mg => averages[mg] === minAvg);
+            const maxGroup = displayGroups.find(mg => averages[mg] === maxAvg);
+            const minGroup = displayGroups.find(mg => averages[mg] === minAvg);
             const ratio = minAvg > 0 ? maxAvg / minAvg : 0;
-            const gaps = muscleComparison.map(w => {
-              const values = selectedMuscles.map(mg => w.muscle_groups[mg] || 0);
+            const gaps = aggregatedData.map(w => {
+              const values = displayGroups.map(mg => w.muscle_groups[mg] || 0);
               return Math.max(...values) - Math.min(...values);
             });
             const maxGap = gaps.length > 0 ? Math.max(...gaps) : 0;
             const maxGapIdx = gaps.indexOf(maxGap);
-            const maxGapWeek = maxGapIdx >= 0 ? muscleComparison[maxGapIdx] : null;
+            const maxGapWeek = maxGapIdx >= 0 ? aggregatedData[maxGapIdx] : null;
             const minGap = gaps.length > 0 ? Math.min(...gaps) : 0;
             const minGapIdx = gaps.indexOf(minGap);
-            const minGapWeek = minGapIdx >= 0 ? muscleComparison[minGapIdx] : null;
+            const minGapWeek = minGapIdx >= 0 ? aggregatedData[minGapIdx] : null;
             
             return (
               <div className="mt-6 p-4 bg-card-border/50 rounded-lg space-y-2 text-sm">
                 <p>
                   {groupsList}
                 </p>
-                {selectedMuscles.length === 2 ? (
+                {displayGroups.length === 2 ? (
                   <p>
                     Ratio: {ratio.toFixed(2)} ({maxGroup} {ratio > 1.2 ? 'significantly' : ratio > 1 ? 'slightly' : 'even'}-trained vs {minGroup})
                   </p>
