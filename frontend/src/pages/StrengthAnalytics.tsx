@@ -62,6 +62,7 @@ export function StrengthAnalytics() {
   const [selectedMuscles, setSelectedMuscles] = useState<string[]>(['Chest', 'Back', 'Shoulders', 'Triceps', 'Biceps', 'Abs', 'Quads', 'Hamstrings', 'Glutes', 'Calves']);
   const [comparisonViewMode, setComparisonViewMode] = useState<'individual' | 'upperLower' | 'bodyRegions'>('individual');
   const [frequencySortBy, setFrequencySortBy] = useState<'frequency' | 'days_since' | 'volume' | 'alphabetical'>('frequency');
+  const [trainingBalanceTab, setTrainingBalanceTab] = useState<'sessions' | 'minutes'>('sessions');
   
   // Muscle group mappings for aggregated views
   const UPPER_BODY_GROUPS = ['Chest', 'Back', 'Shoulders', 'Triceps', 'Biceps', 'Abs'];
@@ -615,183 +616,335 @@ export function StrengthAnalytics() {
                 </div>
               ) : (
                 <>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Session Count Chart */}
-            <div>
-              <h4 className="text-sm font-medium mb-4">Session Count</h4>
-              <div className="h-64">
-                {trainingBalance.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={trainingBalance} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
-                      <XAxis
-                        dataKey="week_start"
-                        stroke="#6b7280"
-                        fontSize={12}
-                        tickFormatter={(value) => formatDate(value, { month: 'short', day: 'numeric' })}
-                      />
-                      <YAxis 
-                        stroke="#6b7280" 
-                        fontSize={12}
-                        label={{ value: 'Sessions', angle: -90, position: 'insideLeft' }}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: '#12121a',
-                          border: '1px solid #1e1e2e',
-                          borderRadius: '8px',
-                        }}
-                        labelFormatter={(label) => `Week of ${formatDate(label)}`}
-                        formatter={(value: any, name: string) => [`${value} sessions`, name]}
-                      />
-                      <Bar 
-                        dataKey="strength_sessions" 
-                        fill="#FF6B35" 
-                        name="Strength" 
-                        radius={[4, 4, 0, 0]}
-                        onClick={(data: any, index: number, e: any) => {
-                          e?.stopPropagation();
-                          if (data && trainingBalance[index]) {
-                            const week = trainingBalance[index];
-                            fetchDrillDown(
-                              {
-                                week_start: week.week_start,
-                                week_end: week.week_end,
-                                activity_type: 'strength_training',
-                              },
-                              `Strength - Week of ${formatDate(week.week_start)}`
-                            );
-                          }
-                        }}
-                        style={{ cursor: 'pointer' }}
-                      />
-                      <Bar 
-                        dataKey="cardio_sessions" 
-                        fill="#2ECC71" 
-                        name="Cardio" 
-                        radius={[4, 4, 0, 0]}
-                        onClick={(data: any, index: number, e: any) => {
-                          e?.stopPropagation();
-                          if (data && trainingBalance[index]) {
-                            const week = trainingBalance[index];
-                            // For cardio, exclude strength_training by passing a non-strength activity_type
-                            // Backend will filter out strength_training
-                            fetchDrillDown(
-                              {
-                                week_start: week.week_start,
-                                week_end: week.week_end,
-                                activity_type: 'cardio', // This will trigger exclusion of strength_training
-                              },
-                              `Cardio - Week of ${formatDate(week.week_start)}`
-                            );
-                          }
-                        }}
-                        style={{ cursor: 'pointer' }}
-                      />
-                      <Legend />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex items-center justify-center h-full text-gray-500">No data</div>
-                )}
-              </div>
-            </div>
-            
-            {/* Training Time Chart */}
-            <div>
-              <h4 className="text-sm font-medium mb-4">Training Time (minutes)</h4>
-              <div className="h-64">
-                {trainingBalance.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={trainingBalance} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
-                      <XAxis
-                        dataKey="week_start"
-                        stroke="#6b7280"
-                        fontSize={12}
-                        tickFormatter={(value) => formatDate(value, { month: 'short', day: 'numeric' })}
-                      />
-                      <YAxis 
-                        stroke="#6b7280" 
-                        fontSize={12}
-                        label={{ value: 'Minutes', angle: -90, position: 'insideLeft' }}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: '#12121a',
-                          border: '1px solid #1e1e2e',
-                          borderRadius: '8px',
-                        }}
-                        labelFormatter={(label) => `Week of ${formatDate(label)}`}
-                        formatter={(value: any, name: string) => [`${value} min`, name]}
-                      />
-                      <Bar 
-                        dataKey="strength_minutes" 
-                        fill="#FF6B35" 
-                        name="Strength"
-                        onClick={(data: any, index: number, e: any) => {
-                          e?.stopPropagation();
-                          if (data && trainingBalance[index]) {
-                            const week = trainingBalance[index];
-                            fetchDrillDown(
-                              {
-                                week_start: week.week_start,
-                                week_end: week.week_end,
-                                activity_type: 'strength_training',
-                              },
-                              `Strength - Week of ${formatDate(week.week_start)}`
-                            );
-                          }
-                        }}
-                        style={{ cursor: 'pointer' }}
-                      />
-                      <Bar 
-                        dataKey="zone2_minutes" 
-                        fill="#2ECC71" 
-                        name="Zone 2"
-                        onClick={(data: any, index: number, e: any) => {
-                          e?.stopPropagation();
-                          if (data && trainingBalance[index]) {
-                            const week = trainingBalance[index];
-                            fetchDrillDown(
-                              {
-                                week_start: week.week_start,
-                                week_end: week.week_end,
-                              },
-                              `Zone 2 - Week of ${formatDate(week.week_start)}`
-                            );
-                          }
-                        }}
-                        style={{ cursor: 'pointer' }}
-                      />
-                      <Bar 
-                        dataKey="vo2_minutes" 
-                        fill="#1a8a5e" 
-                        name="VO2 Max"
-                        onClick={(data: any, index: number, e: any) => {
-                          e?.stopPropagation();
-                          if (data && trainingBalance[index]) {
-                            const week = trainingBalance[index];
-                            fetchDrillDown(
-                              {
-                                week_start: week.week_start,
-                                week_end: week.week_end,
-                              },
-                              `VO2 Max - Week of ${formatDate(week.week_start)}`
-                            );
-                          }
-                        }}
-                        style={{ cursor: 'pointer' }}
-                      />
-                      <Legend />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex items-center justify-center h-full text-gray-500">No data</div>
-                )}
-              </div>
-            </div>
-          </div>
+                  {/* Transform data for small multiples */}
+                  {trainingBalance.length > 0 && (() => {
+                    // Calculate avg minutes per session for chart data
+                    const chartData = trainingBalance.map(week => ({
+                      ...week,
+                      strength_avg_min_per_session: week.strength_sessions > 0 
+                        ? week.strength_minutes / week.strength_sessions 
+                        : 0,
+                      cardio_avg_min_per_session: week.cardio_sessions > 0 
+                        ? (week.zone2_minutes + week.vo2_minutes) / week.cardio_sessions 
+                        : 0,
+                      cardio_total_minutes: week.zone2_minutes + week.vo2_minutes,
+                    }));
+
+                    return (
+                      <div>
+                        {/* Tab Selector */}
+                        <div className="flex gap-2 mb-4 border-b border-card-border">
+                          <button
+                            onClick={() => setTrainingBalanceTab('sessions')}
+                            className={cn(
+                              "px-4 py-2 rounded-t text-sm font-medium transition-colors",
+                              trainingBalanceTab === 'sessions'
+                                ? 'bg-accent text-white border-b-2 border-accent'
+                                : 'bg-transparent text-gray-400 hover:text-gray-200'
+                            )}
+                          >
+                            Sessions & Intensity
+                          </button>
+                          <button
+                            onClick={() => setTrainingBalanceTab('minutes')}
+                            className={cn(
+                              "px-4 py-2 rounded-t text-sm font-medium transition-colors",
+                              trainingBalanceTab === 'minutes'
+                                ? 'bg-accent text-white border-b-2 border-accent'
+                                : 'bg-transparent text-gray-400 hover:text-gray-200'
+                            )}
+                          >
+                            Total Minutes per Week
+                          </button>
+                        </div>
+
+                        {/* Small Multiples: Sessions & Intensity */}
+                        {trainingBalanceTab === 'sessions' && (
+                          <div className="space-y-8">
+                            {/* Chart 1: Session Counts */}
+                            <div>
+                              <h4 className="text-sm font-medium mb-4">Session Count</h4>
+                              <div className="h-64">
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <BarChart 
+                                    data={chartData} 
+                                    margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+                                  >
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
+                                    <XAxis
+                                      dataKey="week_start"
+                                      stroke="#6b7280"
+                                      fontSize={12}
+                                      tickFormatter={(value) => formatDate(value, { month: 'short', day: 'numeric' })}
+                                      interval={0}
+                                      angle={-45}
+                                      textAnchor="end"
+                                      height={60}
+                                    />
+                                    <YAxis 
+                                      stroke="#6b7280" 
+                                      fontSize={12}
+                                      label={{ value: 'Sessions', angle: -90, position: 'insideLeft' }}
+                                    />
+                                    <Tooltip
+                                      contentStyle={{
+                                        backgroundColor: '#12121a',
+                                        border: '1px solid #1e1e2e',
+                                        borderRadius: '8px',
+                                      }}
+                                      labelFormatter={(label) => `Week of ${formatDate(label)}`}
+                                      formatter={(value: any, name: string) => [`${value} sessions`, name]}
+                                    />
+                                    <Bar 
+                                      dataKey="strength_sessions" 
+                                      fill="#FF6B35" 
+                                      name="Strength" 
+                                      radius={[4, 4, 0, 0]}
+                                      onClick={(data: any, index: number, e: any) => {
+                                        e?.stopPropagation();
+                                        if (data && chartData[index]) {
+                                          const week = chartData[index];
+                                          fetchDrillDown(
+                                            {
+                                              week_start: week.week_start,
+                                              week_end: week.week_end,
+                                              activity_type: 'strength_training',
+                                            },
+                                            `Strength - Week of ${formatDate(week.week_start)}`
+                                          );
+                                        }
+                                      }}
+                                      style={{ cursor: 'pointer' }}
+                                    />
+                                    <Bar 
+                                      dataKey="cardio_sessions" 
+                                      fill="#2ECC71" 
+                                      name="Cardio" 
+                                      radius={[4, 4, 0, 0]}
+                                      onClick={(data: any, index: number, e: any) => {
+                                        e?.stopPropagation();
+                                        if (data && chartData[index]) {
+                                          const week = chartData[index];
+                                          fetchDrillDown(
+                                            {
+                                              week_start: week.week_start,
+                                              week_end: week.week_end,
+                                              activity_type: 'cardio',
+                                            },
+                                            `Cardio - Week of ${formatDate(week.week_start)}`
+                                          );
+                                        }
+                                      }}
+                                      style={{ cursor: 'pointer' }}
+                                    />
+                                    <Legend />
+                                  </BarChart>
+                                </ResponsiveContainer>
+                              </div>
+                            </div>
+
+                            {/* Chart 2: Avg Minutes per Session */}
+                            <div>
+                              <h4 className="text-sm font-medium mb-4">Average Minutes per Session</h4>
+                              <div className="h-64">
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <LineChart 
+                                    data={chartData} 
+                                    margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+                                  >
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
+                                    <XAxis
+                                      dataKey="week_start"
+                                      stroke="#6b7280"
+                                      fontSize={12}
+                                      tickFormatter={(value) => formatDate(value, { month: 'short', day: 'numeric' })}
+                                      interval={0}
+                                      angle={-45}
+                                      textAnchor="end"
+                                      height={60}
+                                    />
+                                    <YAxis 
+                                      stroke="#6b7280" 
+                                      fontSize={12}
+                                      label={{ value: 'Minutes per Session', angle: -90, position: 'insideLeft' }}
+                                    />
+                                    <Tooltip
+                                      contentStyle={{
+                                        backgroundColor: '#12121a',
+                                        border: '1px solid #1e1e2e',
+                                        borderRadius: '8px',
+                                      }}
+                                      labelFormatter={(label) => `Week of ${formatDate(label)}`}
+                                      formatter={(value: any, name: string) => {
+                                        if (value === null || value === undefined || isNaN(value)) {
+                                          return ['No sessions', name];
+                                        }
+                                        return [`${value.toFixed(1)} min/session`, name];
+                                      }}
+                                    />
+                                    <Line 
+                                      type="monotone" 
+                                      dataKey="strength_avg_min_per_session" 
+                                      stroke="#FF6B35" 
+                                      strokeWidth={2}
+                                      name="Strength"
+                                      dot={{ fill: '#FF6B35', r: 4 }}
+                                      activeDot={{ r: 6 }}
+                                      connectNulls={false}
+                                      onClick={(data: any, index: number, e: any) => {
+                                        e?.stopPropagation();
+                                        if (data && chartData[index]) {
+                                          const week = chartData[index];
+                                          fetchDrillDown(
+                                            {
+                                              week_start: week.week_start,
+                                              week_end: week.week_end,
+                                              activity_type: 'strength_training',
+                                            },
+                                            `Strength - Week of ${formatDate(week.week_start)}`
+                                          );
+                                        }
+                                      }}
+                                      style={{ cursor: 'pointer' }}
+                                    />
+                                    <Line 
+                                      type="monotone" 
+                                      dataKey="cardio_avg_min_per_session" 
+                                      stroke="#2ECC71" 
+                                      strokeWidth={2}
+                                      name="Cardio"
+                                      dot={{ fill: '#2ECC71', r: 4 }}
+                                      activeDot={{ r: 6 }}
+                                      connectNulls={false}
+                                      onClick={(data: any, index: number, e: any) => {
+                                        e?.stopPropagation();
+                                        if (data && chartData[index]) {
+                                          const week = chartData[index];
+                                          fetchDrillDown(
+                                            {
+                                              week_start: week.week_start,
+                                              week_end: week.week_end,
+                                              activity_type: 'cardio',
+                                            },
+                                            `Cardio - Week of ${formatDate(week.week_start)}`
+                                          );
+                                        }
+                                      }}
+                                      style={{ cursor: 'pointer' }}
+                                    />
+                                    <Legend />
+                                  </LineChart>
+                                </ResponsiveContainer>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Chart 2: Total Minutes per Week */}
+                        {trainingBalanceTab === 'minutes' && (
+                          <div>
+                            <div className="h-96">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <LineChart 
+                                data={chartData} 
+                                margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+                                onClick={(data: any, index: number, e: any) => {
+                                  if (data && data.activePayload && data.activePayload[0]) {
+                                    const payload = data.activePayload[0].payload;
+                                    fetchDrillDown(
+                                      {
+                                        week_start: payload.week_start,
+                                        week_end: payload.week_end,
+                                      },
+                                      `Week of ${formatDate(payload.week_start)}`
+                                    );
+                                  }
+                                }}
+                              >
+                                <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
+                                <XAxis
+                                  dataKey="week_start"
+                                  stroke="#6b7280"
+                                  fontSize={12}
+                                  tickFormatter={(value) => formatDate(value, { month: 'short', day: 'numeric' })}
+                                  interval={0}
+                                  angle={-45}
+                                  textAnchor="end"
+                                  height={60}
+                                />
+                                <YAxis 
+                                  stroke="#6b7280" 
+                                  fontSize={12}
+                                  label={{ value: 'Minutes', angle: -90, position: 'insideLeft' }}
+                                />
+                                <Tooltip
+                                  contentStyle={{
+                                    backgroundColor: '#12121a',
+                                    border: '1px solid #1e1e2e',
+                                    borderRadius: '8px',
+                                  }}
+                                  labelFormatter={(label) => `Week of ${formatDate(label)}`}
+                                  formatter={(value: any, name: string) => [`${value} min`, name]}
+                                />
+                                <Line 
+                                  type="monotone" 
+                                  dataKey="strength_minutes" 
+                                  stroke="#FF6B35" 
+                                  strokeWidth={2}
+                                  name="Strength Minutes"
+                                  dot={{ fill: '#FF6B35', r: 4 }}
+                                  onClick={(data: any, index: number, e: any) => {
+                                    e?.stopPropagation();
+                                    if (data && chartData[index]) {
+                                      const week = chartData[index];
+                                      fetchDrillDown(
+                                        {
+                                          week_start: week.week_start,
+                                          week_end: week.week_end,
+                                          activity_type: 'strength_training',
+                                        },
+                                        `Strength - Week of ${formatDate(week.week_start)}`
+                                      );
+                                    }
+                                  }}
+                                  style={{ cursor: 'pointer' }}
+                                />
+                                <Line 
+                                  type="monotone" 
+                                  dataKey="cardio_total_minutes" 
+                                  stroke="#2ECC71" 
+                                  strokeWidth={2}
+                                  name="Cardio Minutes"
+                                  dot={{ fill: '#2ECC71', r: 4 }}
+                                  onClick={(data: any, index: number, e: any) => {
+                                    e?.stopPropagation();
+                                    if (data && chartData[index]) {
+                                      const week = chartData[index];
+                                      fetchDrillDown(
+                                        {
+                                          week_start: week.week_start,
+                                          week_end: week.week_end,
+                                          activity_type: 'cardio',
+                                        },
+                                        `Cardio - Week of ${formatDate(week.week_start)}`
+                                      );
+                                    }
+                                  }}
+                                  style={{ cursor: 'pointer' }}
+                                />
+                                <Legend />
+                              </LineChart>
+                            </ResponsiveContainer>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                  
+                  {trainingBalance.length === 0 && (
+                    <div className="flex items-center justify-center h-64 text-gray-500">No data</div>
+                  )}
           
           {/* Context Panel */}
           {trainingBalance.length > 0 && (() => {
