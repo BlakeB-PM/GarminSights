@@ -15,12 +15,14 @@ import {
   getTrainingFrequency,
   getVolumeTrends,
   getMuscleComparison,
+  getDrillDownData,
   type ExerciseProgress,
   type KeyLiftCard,
   type TrainingBalanceData,
   type MuscleFrequency,
   type VolumeTrendData,
   type MuscleComparisonData,
+  type DrillDownResponse,
 } from '../lib/api';
 import { formatWeightDual, formatVolumeDual, formatDate, cn } from '../lib/utils';
 import {
@@ -35,8 +37,13 @@ import {
   ResponsiveContainer,
   Legend,
   ComposedChart,
+  PieChart,
+  Pie,
+  Cell,
 } from 'recharts';
 import { Activity, TrendingUp as TrendingUpIcon, ArrowUp, ArrowDown, Minus } from 'lucide-react';
+import { Drawer } from '../components/ui/Drawer';
+import { DrillDownContent } from '../components/strength/DrillDownContent';
 
 export function StrengthAnalytics() {
   const [exercises, setExercises] = useState<string[]>([]);
@@ -83,6 +90,14 @@ export function StrengthAnalytics() {
   });
   
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Drill-down state
+  const [drillDownOpen, setDrillDownOpen] = useState(false);
+  const [drillDownData, setDrillDownData] = useState<DrillDownResponse | null>(null);
+  const [drillDownLoading, setDrillDownLoading] = useState(false);
+  const [drillDownTabs, setDrillDownTabs] = useState<Array<{ label: string; filter: any }>>([]);
+  const [selectedTab, setSelectedTab] = useState(0);
+  const [drillDownTitle, setDrillDownTitle] = useState('');
 
   // Helper function to aggregate muscle comparison data based on view mode
   const aggregateMuscleComparison = (
@@ -325,6 +340,42 @@ export function StrengthAnalytics() {
 
   const exerciseOptions = exercises.map((e) => ({ value: e, label: e }));
 
+  // Drill-down helper function
+  const fetchDrillDown = async (params: any, title: string) => {
+    setDrillDownLoading(true);
+    setDrillDownTitle(title);
+    try {
+      const data = await getDrillDownData(params);
+      setDrillDownData(data);
+      setDrillDownOpen(true);
+    } catch (error) {
+      console.error('Failed to fetch drill-down data:', error);
+      setErrors(prev => ({ ...prev, drillDown: 'Failed to load drill-down data.' }));
+    } finally {
+      setDrillDownLoading(false);
+    }
+  };
+
+  // Handle tab change for overlapping points
+  useEffect(() => {
+    if (drillDownTabs.length > 0 && selectedTab < drillDownTabs.length && drillDownOpen) {
+      const tab = drillDownTabs[selectedTab];
+      setDrillDownLoading(true);
+      getDrillDownData(tab.filter)
+        .then(data => {
+          setDrillDownData(data);
+        })
+        .catch(error => {
+          console.error('Failed to fetch drill-down data:', error);
+          setErrors(prev => ({ ...prev, drillDown: 'Failed to load drill-down data.' }));
+        })
+        .finally(() => {
+          setDrillDownLoading(false);
+        });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTab]);
+
   // Prepare muscle group data for chart
   const muscleGroupData = Object.entries(muscleVolume)
     .filter(([key]) => key !== 'other')
@@ -384,7 +435,22 @@ export function StrengthAnalytics() {
                   <div className="h-80">
                     {volumeTrends.length > 0 ? (
                       <ResponsiveContainer width="100%" height="100%">
-                        <ComposedChart data={volumeTrends} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                        <ComposedChart 
+                          data={volumeTrends} 
+                          margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+                          onClick={(data: any, index: number, e: any) => {
+                            if (data && data.activePayload && data.activePayload[0]) {
+                              const payload = data.activePayload[0].payload;
+                              fetchDrillDown(
+                                {
+                                  week_start: payload.week_start,
+                                  week_end: payload.week_end,
+                                },
+                                `Week of ${formatDate(payload.week_start)}`
+                              );
+                            }
+                          }}
+                        >
                           <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
                           <XAxis
                             dataKey="week_start"
@@ -425,8 +491,49 @@ export function StrengthAnalytics() {
                               return [`${value}`, name];
                             }}
                           />
-                          <Bar yAxisId="left" dataKey="total_tonnage" fill="#FF6B35" name="Tonnage" radius={[4, 4, 0, 0]} />
-                          <Line yAxisId="right" type="monotone" dataKey="total_sets" stroke="#0ea5e9" strokeWidth={2} name="Sets" />
+                          <Bar 
+                            yAxisId="left" 
+                            dataKey="total_tonnage" 
+                            fill="#FF6B35" 
+                            name="Tonnage" 
+                            radius={[4, 4, 0, 0]}
+                            onClick={(data: any, index: number, e: any) => {
+                              e?.stopPropagation();
+                              if (data && volumeTrends[index]) {
+                                const week = volumeTrends[index];
+                                fetchDrillDown(
+                                  {
+                                    week_start: week.week_start,
+                                    week_end: week.week_end,
+                                  },
+                                  `Week of ${formatDate(week.week_start)}`
+                                );
+                              }
+                            }}
+                            style={{ cursor: 'pointer' }}
+                          />
+                          <Line 
+                            yAxisId="right" 
+                            type="monotone" 
+                            dataKey="total_sets" 
+                            stroke="#0ea5e9" 
+                            strokeWidth={2} 
+                            name="Sets"
+                            onClick={(data: any, index: number, e: any) => {
+                              e?.stopPropagation();
+                              if (data && volumeTrends[index]) {
+                                const week = volumeTrends[index];
+                                fetchDrillDown(
+                                  {
+                                    week_start: week.week_start,
+                                    week_end: week.week_end,
+                                  },
+                                  `Week of ${formatDate(week.week_start)}`
+                                );
+                              }
+                            }}
+                            style={{ cursor: 'pointer' }}
+                          />
                           <Legend />
                         </ComposedChart>
                       </ResponsiveContainer>
@@ -538,8 +645,50 @@ export function StrengthAnalytics() {
                         labelFormatter={(label) => `Week of ${formatDate(label)}`}
                         formatter={(value: any, name: string) => [`${value} sessions`, name]}
                       />
-                      <Bar dataKey="strength_sessions" fill="#FF6B35" name="Strength" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="cardio_sessions" fill="#2ECC71" name="Cardio" radius={[4, 4, 0, 0]} />
+                      <Bar 
+                        dataKey="strength_sessions" 
+                        fill="#FF6B35" 
+                        name="Strength" 
+                        radius={[4, 4, 0, 0]}
+                        onClick={(data: any, index: number, e: any) => {
+                          e?.stopPropagation();
+                          if (data && trainingBalance[index]) {
+                            const week = trainingBalance[index];
+                            fetchDrillDown(
+                              {
+                                week_start: week.week_start,
+                                week_end: week.week_end,
+                                activity_type: 'strength_training',
+                              },
+                              `Strength - Week of ${formatDate(week.week_start)}`
+                            );
+                          }
+                        }}
+                        style={{ cursor: 'pointer' }}
+                      />
+                      <Bar 
+                        dataKey="cardio_sessions" 
+                        fill="#2ECC71" 
+                        name="Cardio" 
+                        radius={[4, 4, 0, 0]}
+                        onClick={(data: any, index: number, e: any) => {
+                          e?.stopPropagation();
+                          if (data && trainingBalance[index]) {
+                            const week = trainingBalance[index];
+                            // For cardio, exclude strength_training by passing a non-strength activity_type
+                            // Backend will filter out strength_training
+                            fetchDrillDown(
+                              {
+                                week_start: week.week_start,
+                                week_end: week.week_end,
+                                activity_type: 'cardio', // This will trigger exclusion of strength_training
+                              },
+                              `Cardio - Week of ${formatDate(week.week_start)}`
+                            );
+                          }
+                        }}
+                        style={{ cursor: 'pointer' }}
+                      />
                       <Legend />
                     </BarChart>
                   </ResponsiveContainer>
@@ -577,9 +726,64 @@ export function StrengthAnalytics() {
                         labelFormatter={(label) => `Week of ${formatDate(label)}`}
                         formatter={(value: any, name: string) => [`${value} min`, name]}
                       />
-                      <Bar dataKey="strength_minutes" fill="#FF6B35" name="Strength" />
-                      <Bar dataKey="zone2_minutes" fill="#2ECC71" name="Zone 2" />
-                      <Bar dataKey="vo2_minutes" fill="#1a8a5e" name="VO2 Max" />
+                      <Bar 
+                        dataKey="strength_minutes" 
+                        fill="#FF6B35" 
+                        name="Strength"
+                        onClick={(data: any, index: number, e: any) => {
+                          e?.stopPropagation();
+                          if (data && trainingBalance[index]) {
+                            const week = trainingBalance[index];
+                            fetchDrillDown(
+                              {
+                                week_start: week.week_start,
+                                week_end: week.week_end,
+                                activity_type: 'strength_training',
+                              },
+                              `Strength - Week of ${formatDate(week.week_start)}`
+                            );
+                          }
+                        }}
+                        style={{ cursor: 'pointer' }}
+                      />
+                      <Bar 
+                        dataKey="zone2_minutes" 
+                        fill="#2ECC71" 
+                        name="Zone 2"
+                        onClick={(data: any, index: number, e: any) => {
+                          e?.stopPropagation();
+                          if (data && trainingBalance[index]) {
+                            const week = trainingBalance[index];
+                            fetchDrillDown(
+                              {
+                                week_start: week.week_start,
+                                week_end: week.week_end,
+                              },
+                              `Zone 2 - Week of ${formatDate(week.week_start)}`
+                            );
+                          }
+                        }}
+                        style={{ cursor: 'pointer' }}
+                      />
+                      <Bar 
+                        dataKey="vo2_minutes" 
+                        fill="#1a8a5e" 
+                        name="VO2 Max"
+                        onClick={(data: any, index: number, e: any) => {
+                          e?.stopPropagation();
+                          if (data && trainingBalance[index]) {
+                            const week = trainingBalance[index];
+                            fetchDrillDown(
+                              {
+                                week_start: week.week_start,
+                                week_end: week.week_end,
+                              },
+                              `VO2 Max - Week of ${formatDate(week.week_start)}`
+                            );
+                          }
+                        }}
+                        style={{ cursor: 'pointer' }}
+                      />
                       <Legend />
                     </BarChart>
                   </ResponsiveContainer>
@@ -709,31 +913,132 @@ export function StrengthAnalytics() {
             </div>
           )}
           
-          {!loadingStates.muscleComparison && selectedMuscles.length >= 2 && (
-            <div className="h-80">
-            {muscleComparison.length > 0 ? (() => {
-              // Aggregate data based on view mode
-              const aggregatedData = aggregateMuscleComparison(muscleComparison, comparisonViewMode);
-              
-              // Determine which groups to display
-              let displayGroups: string[];
-              if (comparisonViewMode === 'upperLower') {
-                displayGroups = ['Upper Body', 'Lower Body'];
-              } else if (comparisonViewMode === 'bodyRegions') {
-                displayGroups = ['Arms', 'Chest', 'Back', 'Legs'];
-              } else {
-                displayGroups = selectedMuscles;
-              }
-              
-              // Transform data for Recharts (flatten muscle_groups)
-              const chartData = aggregatedData.map(week => ({
-                week_start: week.week_start,
-                ...week.muscle_groups
-              }));
-              
+          {!loadingStates.muscleComparison && selectedMuscles.length >= 2 && (() => {
+            if (muscleComparison.length === 0) {
               return (
+                <div className="h-80 flex items-center justify-center text-gray-500">
+                  No data available
+                </div>
+              );
+            }
+
+            // Aggregate data based on view mode
+            const aggregatedData = aggregateMuscleComparison(muscleComparison, comparisonViewMode);
+            
+            // Determine which groups to display
+            let displayGroups: string[];
+            if (comparisonViewMode === 'upperLower') {
+              displayGroups = ['Upper Body', 'Lower Body'];
+            } else if (comparisonViewMode === 'bodyRegions') {
+              displayGroups = ['Arms', 'Chest', 'Back', 'Legs'];
+            } else {
+              displayGroups = selectedMuscles;
+            }
+            
+            // Transform data for Recharts (flatten muscle_groups)
+            const chartData = aggregatedData.map(week => ({
+              week_start: week.week_start,
+              ...week.muscle_groups
+            }));
+            
+              return (
+                <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                  <LineChart 
+                    data={chartData} 
+                    margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+                    onClick={(data: any, e: any) => {
+                      // When clicking on the chart, determine which specific line was clicked
+                      if (data && data.activePayload && data.activePayload.length > 0) {
+                        // Get the payload (week data)
+                        const payload = data.activePayload[0].payload;
+                        const week = aggregatedData.find(w => w.week_start === payload.week_start);
+                        
+                        if (week && e && e.chartY !== undefined) {
+                          // Get mouse Y position relative to chart
+                          const clickY = e.chartY;
+                          
+                          // Get all active values at this point
+                          const activeValues = data.activePayload
+                            .filter((p: any) => p.value !== undefined && p.value !== null && p.value > 0)
+                            .map((p: any) => ({
+                              name: p.dataKey,
+                              value: p.value,
+                              payload: p.payload
+                            }));
+                          
+                          if (activeValues.length > 1) {
+                            // Multiple points - find which one is closest to click Y
+                            // Calculate Y positions for each value (approximate based on chart scale)
+                            const chartHeight = 320; // h-80 = 320px
+                            const marginTop = 5;
+                            const marginBottom = 5;
+                            const plotHeight = chartHeight - marginTop - marginBottom;
+                            
+                            // Get min and max values across all active points to calculate scale
+                            const allValues = activeValues.map(av => av.value);
+                            const minValue = Math.min(...allValues);
+                            const maxValue = Math.max(...allValues);
+                            const valueRange = maxValue - minValue || 1;
+                            
+                            // Find which value's Y position is closest to clickY
+                            let closestLine = activeValues[0];
+                            let minDistance = Infinity;
+                            
+                            activeValues.forEach(av => {
+                              // Calculate Y position for this value (inverted because chart Y increases downward)
+                              const normalizedValue = (av.value - minValue) / valueRange;
+                              const valueY = marginTop + plotHeight - (normalizedValue * plotHeight);
+                              const distance = Math.abs(clickY - valueY);
+                              
+                              if (distance < minDistance) {
+                                minDistance = distance;
+                                closestLine = av;
+                              }
+                            });
+                            
+                            // Check if other lines have the same value as the closest one
+                            const sameValueLines = activeValues.filter(av => av.value === closestLine.value);
+                            if (sameValueLines.length > 1) {
+                              // Multiple lines with same value - show tabs
+                              const tabs = sameValueLines.map(av => ({
+                                label: av.name,
+                                filter: {
+                                  week_start: week.week_start,
+                                  week_end: week.week_end,
+                                  muscle_group: av.name,
+                                }
+                              }));
+                              setDrillDownTabs(tabs);
+                              setSelectedTab(0);
+                              setDrillDownTitle(`Week of ${formatDate(week.week_start)}`);
+                              setDrillDownOpen(true);
+                            } else {
+                              // Single closest line clicked
+                              fetchDrillDown(
+                                {
+                                  week_start: week.week_start,
+                                  week_end: week.week_end,
+                                  muscle_group: closestLine.name,
+                                },
+                                `${closestLine.name} - Week of ${formatDate(week.week_start)}`
+                              );
+                            }
+                          } else if (activeValues.length === 1) {
+                            // Single point clicked
+                            fetchDrillDown(
+                              {
+                                week_start: week.week_start,
+                                week_end: week.week_end,
+                                muscle_group: activeValues[0].name,
+                              },
+                              `${activeValues[0].name} - Week of ${formatDate(week.week_start)}`
+                            );
+                          }
+                        }
+                      }
+                    }}
+                  >
                     <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
                     <XAxis
                       dataKey="week_start"
@@ -758,26 +1063,150 @@ export function StrengthAnalytics() {
                     <Legend />
                     {displayGroups.map((mg, idx) => {
                       const colors = ['#0ea5e9', '#10b981', '#FF6B35', '#9B59B6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16'];
+                      const color = colors[idx % colors.length];
+                      
+                      // Custom activeDot with click handler
+                      const CustomActiveDot = (props: any) => {
+                        const { cx, cy, payload, value } = props;
+                        
+                        const handleClick = (event: any) => {
+                          event.stopPropagation();
+                          if (payload) {
+                            const week = aggregatedData.find(w => w.week_start === payload.week_start);
+                            if (week) {
+                              const valuesAtPoint = displayGroups
+                                .map(group => ({
+                                  name: group,
+                                  value: payload[group] || 0
+                                }))
+                                .filter(v => v.value > 0);
+                              
+                              const clickedValue = payload[mg] || 0;
+                              const overlappingGroups = valuesAtPoint.filter(v => v.value === clickedValue);
+                              
+                              if (overlappingGroups.length > 1) {
+                                const tabs = overlappingGroups.map(og => ({
+                                  label: og.name,
+                                  filter: {
+                                    week_start: week.week_start,
+                                    week_end: week.week_end,
+                                    muscle_group: og.name,
+                                  }
+                                }));
+                                setDrillDownTabs(tabs);
+                                setSelectedTab(0);
+                                setDrillDownTitle(`Week of ${formatDate(week.week_start)}`);
+                                setDrillDownOpen(true);
+                              } else {
+                                fetchDrillDown(
+                                  {
+                                    week_start: week.week_start,
+                                    week_end: week.week_end,
+                                    muscle_group: mg,
+                                  },
+                                  `${mg} - Week of ${formatDate(week.week_start)}`
+                                );
+                              }
+                            }
+                          }
+                        };
+                        
+                        return (
+                          <g onClick={handleClick} style={{ cursor: 'pointer' }}>
+                            <circle
+                              cx={cx}
+                              cy={cy}
+                              r={6}
+                              fill={color}
+                              stroke="#fff"
+                              strokeWidth={2}
+                              style={{ cursor: 'pointer' }}
+                            />
+                          </g>
+                        );
+                      };
+                      
+                      // Regular dot component
+                      const CustomDot = (props: any) => {
+                        const { cx, cy, payload, value } = props;
+                        if (value === null || value === undefined || value === 0) return null;
+                        
+                        const handleClick = (event: any) => {
+                          event.stopPropagation();
+                          if (payload) {
+                            const week = aggregatedData.find(w => w.week_start === payload.week_start);
+                            if (week) {
+                              const valuesAtPoint = displayGroups
+                                .map(group => ({
+                                  name: group,
+                                  value: payload[group] || 0
+                                }))
+                                .filter(v => v.value > 0);
+                              
+                              const clickedValue = payload[mg] || 0;
+                              const overlappingGroups = valuesAtPoint.filter(v => v.value === clickedValue);
+                              
+                              if (overlappingGroups.length > 1) {
+                                const tabs = overlappingGroups.map(og => ({
+                                  label: og.name,
+                                  filter: {
+                                    week_start: week.week_start,
+                                    week_end: week.week_end,
+                                    muscle_group: og.name,
+                                  }
+                                }));
+                                setDrillDownTabs(tabs);
+                                setSelectedTab(0);
+                                setDrillDownTitle(`Week of ${formatDate(week.week_start)}`);
+                                setDrillDownOpen(true);
+                              } else {
+                                fetchDrillDown(
+                                  {
+                                    week_start: week.week_start,
+                                    week_end: week.week_end,
+                                    muscle_group: mg,
+                                  },
+                                  `${mg} - Week of ${formatDate(week.week_start)}`
+                                );
+                              }
+                            }
+                          }
+                        };
+                        
+                        return (
+                          <circle
+                            cx={cx}
+                            cy={cy}
+                            r={4}
+                            fill={color}
+                            stroke={color}
+                            strokeWidth={2}
+                            style={{ cursor: 'pointer' }}
+                            onClick={handleClick}
+                            onMouseDown={handleClick}
+                          />
+                        );
+                      };
+                      
                       return (
                         <Line
                           key={mg}
                           type="monotone"
                           dataKey={mg}
-                          stroke={colors[idx % colors.length]}
+                          stroke={color}
                           strokeWidth={2}
                           name={mg}
-                          dot={{ r: 4 }}
+                          dot={CustomDot}
+                          activeDot={CustomActiveDot}
+                          style={{ cursor: 'pointer' }}
                         />
                       );
                     })}
                   </LineChart>
                 </ResponsiveContainer>
-              );
-            })() : (
-              <div className="flex items-center justify-center h-full text-gray-500">No data available</div>
-            )}
-          </div>
-          )}
+              </div>
+            );
+          })()}
           
           {!loadingStates.muscleComparison && comparisonViewMode === 'individual' && selectedMuscles.length < 2 && (
             <div className="h-80 flex items-center justify-center text-gray-500">
@@ -986,36 +1415,88 @@ export function StrengthAnalytics() {
             <TimeFrameSelector mode="days" value={muscleVolumeDays} onChange={setMuscleVolumeDays} />
           </CardHeader>
           <CardContent>
-            <div className="h-64">
+            <div className="h-[500px]">
               {muscleGroupData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={muscleGroupData}
-                    layout="vertical"
-                    margin={{ top: 5, right: 20, left: 60, bottom: 5 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
-                    <XAxis 
-                      type="number" 
-                      stroke="#6b7280" 
-                      fontSize={12}
-                      label={{ value: 'Volume (kg / lbs)', angle: 0, position: 'insideBottom', offset: -5 }}
-                    />
-                    <YAxis dataKey="name" type="category" stroke="#6b7280" fontSize={12} />
+                  <PieChart>
+                    <Pie
+                      data={muscleGroupData}
+                      cx="50%"
+                      cy="45%"
+                      labelLine={false}
+                      outerRadius={140}
+                      fill="#8884d8"
+                      dataKey="volume"
+                      onClick={(entry: any, index: number) => {
+                        if (entry) {
+                          const muscleGroup = entry.name;
+                          const endDate = new Date();
+                          const startDate = new Date();
+                          startDate.setDate(endDate.getDate() - muscleVolumeDays);
+                          fetchDrillDown(
+                            {
+                              date_range_start: startDate.toISOString().split('T')[0],
+                              date_range_end: endDate.toISOString().split('T')[0],
+                              muscle_group: muscleGroup,
+                            },
+                            `${muscleGroup} - Last ${muscleVolumeDays} days`
+                          );
+                        }
+                      }}
+                    >
+                      {muscleGroupData.map((entry, index) => {
+                        // Generate distinct colors for each segment
+                        const colors = [
+                          '#0ea5e9', // sky-500
+                          '#3b82f6', // blue-500
+                          '#6366f1', // indigo-500
+                          '#8b5cf6', // violet-500
+                          '#a855f7', // purple-500
+                          '#d946ef', // fuchsia-500
+                          '#ec4899', // pink-500
+                          '#f43f5e', // rose-500
+                          '#ef4444', // red-500
+                          '#f97316', // orange-500
+                        ];
+                        return (
+                          <Cell 
+                            key={`cell-${index}`} 
+                            fill={colors[index % colors.length]}
+                            style={{ cursor: 'pointer' }}
+                          />
+                        );
+                      })}
+                    </Pie>
                     <Tooltip
                       contentStyle={{
-                        backgroundColor: '#12121a',
-                        border: '1px solid #1e1e2e',
+                        backgroundColor: '#f9fafb',
+                        border: '1px solid #e5e7eb',
                         borderRadius: '8px',
+                        color: '#111827',
                       }}
+                      itemStyle={{ color: '#111827' }}
+                      labelStyle={{ color: '#111827', fontWeight: '600' }}
                       formatter={(value: number) => {
                         const kg = value;
                         const lbs = kg * 2.20462;
                         return [`${kg.toLocaleString()} kg (${lbs.toLocaleString()} lbs)`, 'Volume'];
                       }}
                     />
-                    <Bar dataKey="volume" fill="#0ea5e9" radius={[0, 4, 4, 0]} />
-                  </BarChart>
+                    <Legend
+                      verticalAlign="bottom"
+                      align="center"
+                      layout="horizontal"
+                      wrapperStyle={{ color: '#9ca3af', fontSize: '12px', paddingTop: '20px' }}
+                      formatter={(value, entry: any) => {
+                        const data = muscleGroupData.find(d => d.name === value);
+                        if (data) {
+                          const percent = ((data.volume / muscleGroupData.reduce((sum, d) => sum + d.volume, 0)) * 100).toFixed(1);
+                          return `${value} (${percent}%)`;
+                        }
+                        return value;
+                      }}
+                    />
+                  </PieChart>
                 </ResponsiveContainer>
               ) : (
                 <div className="flex items-center justify-center h-full text-gray-500">
@@ -1106,7 +1587,29 @@ export function StrengthAnalytics() {
                     }}
                     formatter={(value: number) => [`${value.toFixed(2)} sessions/week`, 'Average Frequency']}
                   />
-                  <Bar dataKey="avg_sessions_per_week" fill="#0ea5e9" radius={[0, 4, 4, 0]} />
+                  <Bar 
+                    dataKey="avg_sessions_per_week" 
+                    fill="#0ea5e9" 
+                    radius={[0, 4, 4, 0]}
+                    onClick={(data: any, index: number, e: any) => {
+                      e?.stopPropagation();
+                      if (data && trainingFrequency[index]) {
+                        const muscleGroup = trainingFrequency[index].muscle_group;
+                        const endDate = new Date();
+                        const startDate = new Date();
+                        startDate.setDate(endDate.getDate() - (trainingFrequencyWeeks * 7));
+                        fetchDrillDown(
+                          {
+                            date_range_start: startDate.toISOString().split('T')[0],
+                            date_range_end: endDate.toISOString().split('T')[0],
+                            muscle_group: muscleGroup,
+                          },
+                          `${muscleGroup} - Last ${trainingFrequencyWeeks} weeks`
+                        );
+                      }
+                    }}
+                    style={{ cursor: 'pointer' }}
+                  />
                 </BarChart>
               </ResponsiveContainer>
             ) : (
@@ -1131,6 +1634,42 @@ export function StrengthAnalytics() {
           </Card>
         </div>
       </div>
+
+      {/* Drill-Down Drawer */}
+      <Drawer
+        open={drillDownOpen}
+        onClose={() => {
+          setDrillDownOpen(false);
+          setDrillDownTabs([]);
+          setSelectedTab(0);
+        }}
+        title={drillDownTabs.length > 1 ? drillDownTitle : drillDownTitle}
+        description={
+          drillDownTabs.length > 1
+            ? `Multiple data points overlap. Select a tab to view details.`
+            : undefined
+        }
+      >
+        {drillDownTabs.length > 1 && (
+          <div className="mb-4 flex gap-2 border-b border-card-border pb-4">
+            {drillDownTabs.map((tab, idx) => (
+              <button
+                key={idx}
+                onClick={() => setSelectedTab(idx)}
+                className={cn(
+                  'px-4 py-2 rounded text-sm transition-colors',
+                  selectedTab === idx
+                    ? 'bg-accent text-white'
+                    : 'bg-card-border hover:bg-card-border/80 text-gray-300'
+                )}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        )}
+        <DrillDownContent data={drillDownData} loading={drillDownLoading} />
+      </Drawer>
     </div>
   );
 }

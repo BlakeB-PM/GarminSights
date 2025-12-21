@@ -329,6 +329,24 @@ class MuscleComparisonData(BaseModel):
     muscle_groups: dict[str, int] = {}  # muscle_group -> sets per week
 
 
+class DrillDownActivity(BaseModel):
+    """Activity with sets for drill-down view."""
+    activity_id: int
+    activity_name: str
+    start_time: datetime
+    duration_seconds: Optional[float] = None
+    sets: list[StrengthSet] = []
+
+
+class DrillDownResponse(BaseModel):
+    """Drill-down response with activities and sets."""
+    period_start: date
+    period_end: date
+    total_activities: int = 0
+    total_sets: int = 0
+    activities: list[DrillDownActivity] = []
+
+
 # ============================================
 # Chat Schemas
 # ============================================

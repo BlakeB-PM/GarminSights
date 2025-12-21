@@ -9,7 +9,7 @@ from app.database import execute_query
 from app.models.schemas import (
     StrengthSet, ExerciseProgress, ExerciseList,
     KeyLiftCard, TrainingBalanceData, MuscleFrequency,
-    VolumeTrendData, MuscleComparisonData
+    VolumeTrendData, MuscleComparisonData, DrillDownResponse, DrillDownActivity
 )
 from app.services.muscle_mapping import get_primary_muscle_group, get_all_muscle_groups
 
@@ -819,4 +819,175 @@ async def get_muscle_comparison(
         ))
     
     return result
+
+
+@router.get("/drill-down", response_model=DrillDownResponse)
+async def get_drill_down(
+    week_start: Optional[date] = Query(None, description="Start of week for weekly aggregations"),
+    week_end: Optional[date] = Query(None, description="End of week for weekly aggregations"),
+    date: Optional[date] = Query(None, description="Single date for daily data"),
+    date_range_start: Optional[date] = Query(None, description="Start of custom date range"),
+    date_range_end: Optional[date] = Query(None, description="End of custom date range"),
+    muscle_group: Optional[str] = Query(None, description="Filter by muscle group"),
+    exercise_name: Optional[str] = Query(None, description="Filter by exercise name"),
+    activity_type: Optional[str] = Query(None, description="Filter by activity type (e.g., strength_training)")
+):
+    """
+    Get drill-down data showing activities and sets for a specific period.
+    
+    Returns activities with their strength sets, grouped by activity.
+    Supports filtering by date range, muscle group, exercise name, and activity type.
+    """
+    from app.services.muscle_mapping import get_all_muscle_groups
+    
+    # Determine date range
+    start_date = None
+    end_date = None
+    
+    if week_start and week_end:
+        start_date = week_start
+        end_date = week_end
+    elif date:
+        start_date = date
+        end_date = date
+    elif date_range_start and date_range_end:
+        start_date = date_range_start
+        end_date = date_range_end
+    else:
+        raise ValueError("Must provide either (week_start, week_end), date, or (date_range_start, date_range_end)")
+    
+    # Build base query
+    query = """
+        SELECT DISTINCT
+            a.id as activity_id,
+            a.name as activity_name,
+            a.start_time,
+            a.duration_seconds,
+            a.activity_type
+        FROM activities a
+        JOIN strength_sets ss ON a.id = ss.activity_id
+        WHERE DATE(a.start_time) >= ? AND DATE(a.start_time) <= ?
+          AND ss.weight_kg > 0
+    """
+    params = [start_date.isoformat(), end_date.isoformat()]
+    
+    # Apply activity_type filter
+    # Special handling: if activity_type is provided and not 'strength_training',
+    # we want to exclude strength_training activities
+    if activity_type:
+        if activity_type == 'strength_training':
+            query += " AND a.activity_type = ?"
+            params.append(activity_type)
+        else:
+            # For cardio/other types, exclude strength_training
+            query += " AND a.activity_type != 'strength_training'"
+    
+    # Apply exercise_name filter
+    if exercise_name:
+        query += " AND ss.exercise_name = ?"
+        params.append(exercise_name)
+    
+    # Apply muscle_group filter (need to check exercises)
+    if muscle_group:
+        # We'll filter after getting activities by checking if any exercise matches the muscle group
+        pass
+    
+    query += " ORDER BY a.start_time"
+    
+    # Get activities
+    activities_data = execute_query(query, tuple(params))
+    
+    # Filter by muscle group if needed (check each activity's exercises)
+    if muscle_group:
+        filtered_activities = []
+        for act in activities_data:
+            # Get all sets for this activity
+            sets_query = """
+                SELECT ss.*
+                FROM strength_sets ss
+                WHERE ss.activity_id = ?
+                  AND ss.exercise_name IS NOT NULL
+                  AND ss.weight_kg > 0
+            """
+            activity_sets = execute_query(sets_query, (act["activity_id"],))
+            
+            # Check if any set's exercise matches the muscle group
+            has_matching_exercise = False
+            for s in activity_sets:
+                exercise_name = s.get("exercise_name")
+                if exercise_name:
+                    muscle_groups = get_all_muscle_groups(exercise_name)
+                    if muscle_group in muscle_groups:
+                        has_matching_exercise = True
+                        break
+            
+            if has_matching_exercise:
+                filtered_activities.append(act)
+        activities_data = filtered_activities
+    
+    # Get sets for each activity
+    result_activities = []
+    total_sets = 0
+    
+    for act in activities_data:
+        sets_query = """
+            SELECT ss.*
+            FROM strength_sets ss
+            WHERE ss.activity_id = ?
+              AND ss.weight_kg > 0
+        """
+        sets_params = [act["activity_id"]]
+        
+        # Apply exercise_name filter to sets if provided
+        if exercise_name:
+            sets_query += " AND ss.exercise_name = ?"
+            sets_params.append(exercise_name)
+        
+        # Apply muscle_group filter to sets if provided
+        if muscle_group:
+            # Get all sets and filter by muscle group
+            all_sets = execute_query(sets_query, tuple(sets_params))
+            filtered_sets = []
+            for s in all_sets:
+                exercise_name = s.get("exercise_name")
+                if exercise_name:
+                    muscle_groups = get_all_muscle_groups(exercise_name)
+                    if muscle_group in muscle_groups:
+                        filtered_sets.append(s)
+            activity_sets = filtered_sets
+        else:
+            activity_sets = execute_query(sets_query, tuple(sets_params))
+        
+        # Only include activities that have sets (after filtering)
+        if activity_sets:
+            # Convert sets to StrengthSet models
+            strength_sets = [
+                StrengthSet(
+                    id=s["id"],
+                    activity_id=s["activity_id"],
+                    exercise_name=s.get("exercise_name"),
+                    set_number=s.get("set_number"),
+                    reps=s.get("reps"),
+                    weight_kg=s.get("weight_kg"),
+                    duration_seconds=s.get("duration_seconds")
+                )
+                for s in activity_sets
+            ]
+            
+            result_activities.append(DrillDownActivity(
+                activity_id=act["activity_id"],
+                activity_name=act.get("activity_name") or "Untitled Activity",
+                start_time=datetime.fromisoformat(act["start_time"].replace("Z", "+00:00")).replace(tzinfo=None),
+                duration_seconds=act.get("duration_seconds"),
+                sets=strength_sets
+            ))
+            total_sets += len(strength_sets)
+    
+    return DrillDownResponse(
+        period_start=start_date,
+        period_end=end_date,
+        total_activities=len(result_activities),
+        total_sets=total_sets,
+        activities=result_activities
+    )
 
