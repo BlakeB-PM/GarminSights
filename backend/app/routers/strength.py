@@ -634,9 +634,12 @@ async def get_training_frequency(
 
 
 @router.get("/volume-trends", response_model=list[VolumeTrendData])
-async def get_volume_trends(weeks: int = Query(12, ge=4, le=52)):
+async def get_volume_trends(
+    weeks: int = Query(12, ge=4, le=52),
+    muscle_group: str = Query(None, description="Filter by muscle group (e.g., 'Chest', 'Back'). If not provided, returns total volume.")
+):
     """
-    Get total volume trends by week.
+    Get volume trends by week, optionally filtered by muscle group.
     
     Returns weekly tonnage and sets with week-over-week deltas.
     Includes all data up to current date.
@@ -678,21 +681,65 @@ async def get_volume_trends(weeks: int = Query(12, ge=4, le=52)):
     
     # Get weekly aggregations
     try:
-        weekly_data = execute_query(
-            """
-            SELECT 
-                DATE(a.start_time) as workout_date,
-                SUM(ss.weight_lbs * ss.reps * 1.0) as tonnage,
-                COUNT(*) as sets_count
-            FROM strength_sets ss
-            JOIN activities a ON ss.activity_id = a.id
-            WHERE a.start_time >= ?
-              AND ss.weight_lbs > 0
-            GROUP BY DATE(a.start_time)
-            ORDER BY workout_date DESC
-            """,
-            (start_datetime,)
-        )
+        if muscle_group:
+            # If filtering by muscle group, we need to get exercise-level data and filter
+            exercise_data = execute_query(
+                """
+                SELECT 
+                    DATE(a.start_time) as workout_date,
+                    ss.exercise_name,
+                    SUM(ss.weight_lbs * ss.reps * 1.0) as tonnage,
+                    COUNT(*) as sets_count
+                FROM strength_sets ss
+                JOIN activities a ON ss.activity_id = a.id
+                WHERE a.start_time >= ?
+                  AND ss.weight_lbs > 0
+                GROUP BY DATE(a.start_time), ss.exercise_name
+                ORDER BY workout_date DESC
+                """,
+                (start_datetime,)
+            )
+            
+            # Filter exercises by muscle group
+            filtered_data = {}
+            for data in exercise_data:
+                exercise_name = data["exercise_name"] or ""
+                if not exercise_name:
+                    continue
+                
+                # Check if this exercise targets the specified muscle group
+                muscle_groups = get_all_muscle_groups(exercise_name)
+                if muscle_group not in muscle_groups:
+                    continue
+                
+                # Aggregate by date
+                workout_date = data["workout_date"]
+                if workout_date not in filtered_data:
+                    filtered_data[workout_date] = {"tonnage": 0.0, "sets_count": 0}
+                filtered_data[workout_date]["tonnage"] += (data["tonnage"] or 0)
+                filtered_data[workout_date]["sets_count"] += (data["sets_count"] or 0)
+            
+            weekly_data = [
+                {"workout_date": date, "tonnage": data["tonnage"], "sets_count": data["sets_count"]}
+                for date, data in filtered_data.items()
+            ]
+        else:
+            # Total volume (no muscle group filter)
+            weekly_data = execute_query(
+                """
+                SELECT 
+                    DATE(a.start_time) as workout_date,
+                    SUM(ss.weight_lbs * ss.reps * 1.0) as tonnage,
+                    COUNT(*) as sets_count
+                FROM strength_sets ss
+                JOIN activities a ON ss.activity_id = a.id
+                WHERE a.start_time >= ?
+                  AND ss.weight_lbs > 0
+                GROUP BY DATE(a.start_time)
+                ORDER BY workout_date DESC
+                """,
+                (start_datetime,)
+            )
     except Exception as e:
         raise
     

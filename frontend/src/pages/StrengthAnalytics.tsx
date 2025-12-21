@@ -71,6 +71,7 @@ export function StrengthAnalytics() {
   
   // Time frame state management
   const [volumeTrendsWeeks, setVolumeTrendsWeeks] = useState<4 | 8 | 12 | 16 | 24 | 52>(12);
+  const [volumeTrendsMuscleGroup, setVolumeTrendsMuscleGroup] = useState<string>('Total');
   const [trainingBalanceWeeks, setTrainingBalanceWeeks] = useState<4 | 8 | 12 | 16 | 24 | 52>(12);
   const [trainingFrequencyWeeks, setTrainingFrequencyWeeks] = useState<4 | 8 | 12 | 16 | 24 | 52>(12);
   const [muscleComparisonWeeks, setMuscleComparisonWeeks] = useState<4 | 8 | 12 | 16 | 24 | 52>(12);
@@ -253,7 +254,7 @@ export function StrengthAnalytics() {
   // Load volume trends (weeks-based)
   useEffect(() => {
     setLoadingStates(prev => ({ ...prev, volumeTrends: true }));
-    getVolumeTrends(volumeTrendsWeeks)
+    getVolumeTrends(volumeTrendsWeeks, volumeTrendsMuscleGroup === 'Total' ? undefined : volumeTrendsMuscleGroup)
       .then(data => {
         setVolumeTrends(Array.isArray(data) ? data : []);
         setLoadingStates(prev => ({ ...prev, volumeTrends: false }));
@@ -268,7 +269,7 @@ export function StrengthAnalytics() {
         setLoadingStates(prev => ({ ...prev, volumeTrends: false }));
         setErrors(prev => ({ ...prev, volumeTrends: 'Failed to load volume trends data.' }));
       });
-  }, [volumeTrendsWeeks]);
+  }, [volumeTrendsWeeks, volumeTrendsMuscleGroup]);
   
   // Load muscle comparison when selected muscles or weeks change
   useEffect(() => {
@@ -414,12 +415,27 @@ export function StrengthAnalytics() {
                 <div>
                   <CardTitle className="flex items-center gap-2">
                     <TrendingUpIcon className="w-5 h-5 text-accent" />
-                    Total Volume Trends
+                    {volumeTrendsMuscleGroup === 'Total' ? 'Total' : volumeTrendsMuscleGroup} Volume Trends
                   </CardTitle>
-                  <CardDescription>Weekly tonnage and sets over time</CardDescription>
+                  <CardDescription>
+                    {volumeTrendsMuscleGroup === 'Total' 
+                      ? 'Weekly tonnage and sets over time' 
+                      : `Weekly tonnage and sets for ${volumeTrendsMuscleGroup} over time`}
+                  </CardDescription>
                 </div>
               </div>
-              <TimeFrameSelector mode="weeks" value={volumeTrendsWeeks} onChange={setVolumeTrendsWeeks} />
+              <div className="flex gap-4 items-center">
+                <TimeFrameSelector mode="weeks" value={volumeTrendsWeeks} onChange={setVolumeTrendsWeeks} />
+                <Select
+                  value={volumeTrendsMuscleGroup}
+                  onChange={(e) => setVolumeTrendsMuscleGroup(e.target.value)}
+                  options={[
+                    { value: 'Total', label: 'Total' },
+                    ...ALL_MUSCLE_GROUPS.map(mg => ({ value: mg, label: mg }))
+                  ]}
+                  placeholder="Select muscle group"
+                />
+              </div>
             </CardHeader>
             <CardContent>
               {errors.volumeTrends && (
@@ -442,12 +458,16 @@ export function StrengthAnalytics() {
                           onClick={(data: any, index: number, e: any) => {
                             if (data && data.activePayload && data.activePayload[0]) {
                               const payload = data.activePayload[0].payload;
+                              const drillDownParams: any = {
+                                week_start: payload.week_start,
+                                week_end: payload.week_end,
+                              };
+                              if (volumeTrendsMuscleGroup !== 'Total') {
+                                drillDownParams.muscle_group = volumeTrendsMuscleGroup;
+                              }
                               fetchDrillDown(
-                                {
-                                  week_start: payload.week_start,
-                                  week_end: payload.week_end,
-                                },
-                                `Week of ${formatDate(payload.week_start)}`
+                                drillDownParams,
+                                `${volumeTrendsMuscleGroup === 'Total' ? 'Total' : volumeTrendsMuscleGroup} - Week of ${formatDate(payload.week_start)}`
                               );
                             }
                           }}
@@ -501,12 +521,16 @@ export function StrengthAnalytics() {
                               e?.stopPropagation();
                               if (data && volumeTrends[index]) {
                                 const week = volumeTrends[index];
+                                const drillDownParams: any = {
+                                  week_start: week.week_start,
+                                  week_end: week.week_end,
+                                };
+                                if (volumeTrendsMuscleGroup !== 'Total') {
+                                  drillDownParams.muscle_group = volumeTrendsMuscleGroup;
+                                }
                                 fetchDrillDown(
-                                  {
-                                    week_start: week.week_start,
-                                    week_end: week.week_end,
-                                  },
-                                  `Week of ${formatDate(week.week_start)}`
+                                  drillDownParams,
+                                  `${volumeTrendsMuscleGroup === 'Total' ? 'Total' : volumeTrendsMuscleGroup} - Week of ${formatDate(week.week_start)}`
                                 );
                               }
                             }}
@@ -523,12 +547,16 @@ export function StrengthAnalytics() {
                               e?.stopPropagation();
                               if (data && volumeTrends[index]) {
                                 const week = volumeTrends[index];
+                                const drillDownParams: any = {
+                                  week_start: week.week_start,
+                                  week_end: week.week_end,
+                                };
+                                if (volumeTrendsMuscleGroup !== 'Total') {
+                                  drillDownParams.muscle_group = volumeTrendsMuscleGroup;
+                                }
                                 fetchDrillDown(
-                                  {
-                                    week_start: week.week_start,
-                                    week_end: week.week_end,
-                                  },
-                                  `Week of ${formatDate(week.week_start)}`
+                                  drillDownParams,
+                                  `${volumeTrendsMuscleGroup === 'Total' ? 'Total' : volumeTrendsMuscleGroup} - Week of ${formatDate(week.week_start)}`
                                 );
                               }
                             }}
@@ -563,7 +591,7 @@ export function StrengthAnalytics() {
                     return (
                       <div className="mt-6 p-4 bg-card-border/50 rounded-lg space-y-2 text-sm">
                         <p>
-                          Current week: Total volume: {formatVolumeDual(currentWeek.total_tonnage)} | {currentWeek.total_sets} sets
+                          Current week: {volumeTrendsMuscleGroup === 'Total' ? 'Total' : volumeTrendsMuscleGroup} volume: {formatVolumeDual(currentWeek.total_tonnage)} | {currentWeek.total_sets} sets
                         </p>
                         <p>
                           4-week average: {formatVolumeDual(avgTonnage)} | {avgSets.toFixed(0)} sets
@@ -1210,7 +1238,39 @@ export function StrengthAnalytics() {
                         borderRadius: '8px',
                       }}
                       labelFormatter={(label) => `Week of ${formatDate(label)}`}
-                      formatter={(value: any, name: string) => [`${value} sets`, name]}
+                      content={({ active, payload, label }) => {
+                        if (active && payload && payload.length > 0) {
+                          // Sort payload by value in descending order
+                          const sortedPayload = [...payload].sort((a, b) => {
+                            const aValue = a.value || 0;
+                            const bValue = b.value || 0;
+                            return bValue - aValue;
+                          });
+                          
+                          return (
+                            <div className="bg-[#12121a] border border-[#1e1e2e] rounded-lg p-3">
+                              <p className="font-semibold text-white mb-2">
+                                Week of {formatDate(label)}
+                              </p>
+                              <div className="space-y-1">
+                                {sortedPayload.map((entry: any, index: number) => {
+                                  if (entry.value === null || entry.value === undefined || entry.value === 0) {
+                                    return null;
+                                  }
+                                  return (
+                                    <p key={index} className="text-sm">
+                                      <span style={{ color: entry.color }}>●</span>{' '}
+                                      <span className="text-gray-300">{entry.name}:</span>{' '}
+                                      <span className="text-white font-medium">{entry.value} sets</span>
+                                    </p>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
                     />
                     <Legend />
                     {displayGroups.map((mg, idx) => {
@@ -1463,12 +1523,12 @@ export function StrengthAnalytics() {
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent" />
                 </div>
               ) : (
-                <div className="flex gap-4 overflow-x-auto pb-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                   {keyLifts.map((lift) => (
                     <div
                       key={lift.exercise_name}
                       className={cn(
-                        "min-w-[280px] p-4 rounded-lg border transition-all cursor-pointer hover:scale-105",
+                        "p-4 rounded-lg border transition-all cursor-pointer hover:scale-105",
                         lift.status === 'progress' && "border-green-500/50 bg-green-500/10",
                         lift.status === 'stable' && "border-gray-500/50 bg-gray-500/10",
                         lift.status === 'plateau' && "border-yellow-500/50 bg-yellow-500/10",
@@ -1575,7 +1635,18 @@ export function StrengthAnalytics() {
                       data={muscleGroupData}
                       cx="50%"
                       cy="45%"
-                      labelLine={false}
+                      labelLine={true}
+                      label={({ name, percent, value }) => {
+                        // Show label for all slices, but format differently for very small ones
+                        if (percent > 0.01) {
+                          // For slices > 1%, show name and percentage
+                          return `${name}: ${(percent * 100).toFixed(0)}%`;
+                        } else if (value > 0) {
+                          // For very small slices, just show name
+                          return name;
+                        }
+                        return '';
+                      }}
                       outerRadius={140}
                       fill="#8884d8"
                       dataKey="volume"
@@ -1597,18 +1668,18 @@ export function StrengthAnalytics() {
                       }}
                     >
                       {muscleGroupData.map((entry, index) => {
-                        // Generate distinct colors for each segment
+                        // More distinct, varied colors
                         const colors = [
-                          '#0ea5e9', // sky-500
-                          '#3b82f6', // blue-500
-                          '#6366f1', // indigo-500
-                          '#8b5cf6', // violet-500
-                          '#a855f7', // purple-500
-                          '#d946ef', // fuchsia-500
-                          '#ec4899', // pink-500
-                          '#f43f5e', // rose-500
-                          '#ef4444', // red-500
-                          '#f97316', // orange-500
+                          '#FF6B35', // Orange - Chest
+                          '#2ECC71', // Green - Back
+                          '#3498DB', // Blue - Glutes
+                          '#9B59B6', // Purple - Hamstrings
+                          '#E74C3C', // Red - Biceps
+                          '#F39C12', // Orange/Yellow - Triceps
+                          '#1ABC9C', // Teal - Abs
+                          '#E67E22', // Dark Orange - Shoulders
+                          '#95A5A6', // Gray - Calves
+                          '#34495E', // Dark Blue - Quads
                         ];
                         return (
                           <Cell 
@@ -1621,16 +1692,22 @@ export function StrengthAnalytics() {
                     </Pie>
                     <Tooltip
                       contentStyle={{
-                        backgroundColor: '#f9fafb',
-                        border: '1px solid #e5e7eb',
+                        backgroundColor: '#12121a',
+                        border: '1px solid #1e1e2e',
                         borderRadius: '8px',
-                        color: '#111827',
                       }}
-                      itemStyle={{ color: '#111827' }}
-                      labelStyle={{ color: '#111827', fontWeight: '600' }}
-                      formatter={(value: number) => {
+                      itemStyle={{ color: '#e5e7eb' }}
+                      labelStyle={{ color: '#ffffff', fontWeight: '600', marginBottom: '4px' }}
+                      formatter={(value: number, name: string, props: any) => {
                         // Value is already in lbs from backend
-                        return [`${value.toLocaleString()} lbs`, 'Volume'];
+                        const percent = props.payload && muscleGroupData.length > 0
+                          ? ((value / muscleGroupData.reduce((sum: number, d: any) => sum + d.volume, 0)) * 100).toFixed(1)
+                          : '0.0';
+                        return [`${value.toLocaleString()} lbs (${percent}%)`, 'Volume'];
+                      }}
+                      labelFormatter={(label) => {
+                        // Show muscle group name as the label
+                        return label || 'Muscle Group';
                       }}
                     />
                     <Legend
