@@ -162,6 +162,89 @@ def migrate_remove_unused_daily_fields() -> None:
     logger.info("Migration 1: Skipped (superseded by migration 2)")
 
 
+def migration_3_convert_weight_to_lbs() -> None:
+    """
+    Migration 3: Convert weight_kg to weight_lbs in strength_sets table.
+    
+    Converts all existing weight values from kg to lbs to avoid rounding errors
+    when displaying weights, since the app now uses imperial units throughout.
+    """
+    db_path = get_database_path()
+    
+    if not db_path.exists():
+        logger.info("Database doesn't exist yet, migration not needed")
+        return
+    
+    conn = sqlite3.connect(str(db_path))
+    try:
+        # Check if weight_lbs column already exists
+        cursor = conn.execute("PRAGMA table_info(strength_sets)")
+        columns = {row[1]: row for row in cursor.fetchall()}
+        
+        if 'weight_lbs' in columns:
+            logger.info("Migration 3: weight_lbs column already exists, skipping")
+            return
+        
+        logger.info("Migration 3: Converting weight_kg to weight_lbs...")
+        
+        # Add weight_lbs column
+        conn.execute("ALTER TABLE strength_sets ADD COLUMN weight_lbs REAL")
+        
+        # Convert existing weight_kg values to lbs (kg * 2.20462)
+        conn.execute("""
+            UPDATE strength_sets 
+            SET weight_lbs = weight_kg * 2.20462 
+            WHERE weight_kg IS NOT NULL
+        """)
+        
+        # Count converted rows
+        cursor = conn.execute("SELECT COUNT(*) FROM strength_sets WHERE weight_lbs IS NOT NULL")
+        converted_count = cursor.fetchone()[0]
+        
+        logger.info(f"Migration 3: Converted {converted_count} weight values from kg to lbs")
+        
+        # Drop the old weight_kg column by recreating the table
+        # SQLite doesn't support DROP COLUMN directly, so we rebuild the table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS strength_sets_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                activity_id INTEGER REFERENCES activities(id),
+                exercise_name TEXT,
+                set_number INTEGER,
+                reps INTEGER,
+                weight_lbs REAL,
+                duration_seconds INTEGER,
+                raw_json TEXT
+            )
+        """)
+        
+        # Copy all data, using weight_lbs (which we just populated)
+        conn.execute("""
+            INSERT INTO strength_sets_new 
+            (id, activity_id, exercise_name, set_number, reps, weight_lbs, duration_seconds, raw_json)
+            SELECT id, activity_id, exercise_name, set_number, reps, weight_lbs, duration_seconds, raw_json
+            FROM strength_sets
+        """)
+        
+        # Drop old table and rename new one
+        conn.execute("DROP TABLE strength_sets")
+        conn.execute("ALTER TABLE strength_sets_new RENAME TO strength_sets")
+        
+        # Recreate indexes
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_strength_sets_activity ON strength_sets(activity_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_strength_sets_exercise ON strength_sets(exercise_name)")
+        
+        conn.commit()
+        logger.info("Migration 3: Successfully converted weight_kg to weight_lbs")
+        
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Migration 3 failed: {e}")
+        raise
+    finally:
+        conn.close()
+
+
 def run_migrations() -> None:
     """Run all pending migrations."""
     db_path = get_database_path()
@@ -171,7 +254,7 @@ def run_migrations() -> None:
         return
     
     current_version = get_schema_version(db_path)
-    target_version = 2
+    target_version = 3
     
     if current_version >= target_version:
         logger.info(f"Database is at version {current_version}, no migrations needed")
@@ -188,6 +271,11 @@ def run_migrations() -> None:
     if current_version < 2:
         migration_2_rebuild_dailies_table()
         set_schema_version(db_path, 2)
+    
+    # Migration 3: Convert weight_kg to weight_lbs
+    if current_version < 3:
+        migration_3_convert_weight_to_lbs()
+        set_schema_version(db_path, 3)
     
     logger.info("All migrations completed successfully")
 

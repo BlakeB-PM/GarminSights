@@ -1,5 +1,5 @@
 import type { Activity } from '../../lib/api';
-import { formatDuration, cn, formatDistanceDual, formatPaceDual, formatSpeedDual, formatElevationDual, formatStrideLengthDual } from '../../lib/utils';
+import { formatDuration, cn, formatDistanceDual, formatPaceDual, formatSpeedDual, formatElevationDual, formatStrideLengthDual, formatWeightDual } from '../../lib/utils';
 import { 
   Clock, 
   TrendingUp, 
@@ -59,7 +59,7 @@ export function ActivityDetailView({ activity }: ActivityDetailViewProps) {
   if (isStrength && activity.strength_sets && activity.strength_sets.length > 0) {
     const activeSets = activity.strength_sets.filter(s => s.exercise_name?.toLowerCase() !== 'rest');
     const totalReps = activeSets.reduce((sum, s) => sum + (s.reps || 0), 0);
-    const totalVolume = activeSets.reduce((sum, s) => sum + ((s.reps || 0) * (s.weight_kg || 0)), 0);
+    const totalVolume = activeSets.reduce((sum, s) => sum + ((s.reps || 0) * (s.weight_lbs || 0)), 0);
     const uniqueExercises = new Set(activeSets.map(s => s.exercise_name).filter(Boolean));
     
     strengthSummary = {
@@ -487,9 +487,7 @@ export function ActivityDetailView({ activity }: ActivityDetailViewProps) {
                         {set.reps !== null && set.reps !== undefined ? set.reps : '—'}
                       </td>
                       <td className="py-1.5 pr-4 text-right font-mono">
-                        {set.weight_kg 
-                          ? `${set.weight_kg.toFixed(1)} kg (${(set.weight_kg * 2.205).toFixed(0)} lbs)`
-                          : '—'}
+                        {formatWeightDual(set.weight_lbs)}
                       </td>
                       <td className="py-1.5 pr-4 text-right font-mono text-gray-400">
                         {set.duration_seconds 

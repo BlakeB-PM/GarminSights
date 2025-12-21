@@ -8,7 +8,7 @@ type StrengthSet = {
   exercise_name: string | null;
   set_number: number | null;
   reps: number | null;
-  weight_kg: number | null;
+  weight_lbs: number | null;
   duration_seconds: number | null;
 };
 
@@ -126,8 +126,8 @@ export function DrillDownContent({ data, loading }: DrillDownContentProps) {
                             </span>
                           </div>
                           <div className="flex items-center gap-4 text-gray-300">
-                            {set.weight_kg && (
-                              <span>{formatWeightDual(set.weight_kg)}</span>
+                            {set.weight_lbs && (
+                              <span>{formatWeightDual(set.weight_lbs)}</span>
                             )}
                             {set.reps && (
                               <span className="text-gray-400">× {set.reps} reps</span>

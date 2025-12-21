@@ -466,7 +466,7 @@ export function StrengthAnalytics() {
                             yAxisId="left"
                             stroke="#6b7280"
                             fontSize={12}
-                            label={{ value: 'Tonnage (kg / lbs)', angle: -90, position: 'insideLeft' }}
+                            label={{ value: 'Tonnage (lbs)', angle: -90, position: 'insideLeft' }}
                           />
                           <YAxis
                             yAxisId="right"
@@ -484,9 +484,8 @@ export function StrengthAnalytics() {
                             labelFormatter={(label) => `Week of ${formatDate(label)}`}
                             formatter={(value: any, name: string) => {
                               if (name === 'Tonnage') {
-                                const kg = value;
-                                const lbs = kg * 2.20462;
-                                return [`${kg.toLocaleString()} kg (${lbs.toLocaleString()} lbs)`, 'Tonnage'];
+                                // Value is already in lbs from backend
+                                return [`${value.toLocaleString()} lbs`, 'Tonnage'];
                               }
                               return [`${value}`, name];
                             }}
@@ -1477,9 +1476,8 @@ export function StrengthAnalytics() {
                       itemStyle={{ color: '#111827' }}
                       labelStyle={{ color: '#111827', fontWeight: '600' }}
                       formatter={(value: number) => {
-                        const kg = value;
-                        const lbs = kg * 2.20462;
-                        return [`${kg.toLocaleString()} kg (${lbs.toLocaleString()} lbs)`, 'Volume'];
+                        // Value is already in lbs from backend
+                        return [`${value.toLocaleString()} lbs`, 'Volume'];
                       }}
                     />
                     <Legend

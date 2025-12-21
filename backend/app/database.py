@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS strength_sets (
     exercise_name TEXT,
     set_number INTEGER,
     reps INTEGER,
-    weight_kg REAL,
+    weight_lbs REAL,
     duration_seconds INTEGER,
     raw_json TEXT
 );

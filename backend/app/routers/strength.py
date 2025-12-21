@@ -84,16 +84,16 @@ async def get_exercise_progress(
         SELECT 
             DATE(a.start_time) as date,
             ss.exercise_name,
-            MAX(ss.weight_kg * (1 + ss.reps / 30.0)) as estimated_1rm,
-            SUM(ss.weight_kg * ss.reps) as total_volume,
-            MAX(ss.weight_kg) as max_weight,
+            MAX(ss.weight_lbs * (1 + ss.reps / 30.0)) as estimated_1rm,
+            SUM(ss.weight_lbs * ss.reps) as total_volume,
+            MAX(ss.weight_lbs) as max_weight,
             SUM(ss.reps) as total_reps,
             COUNT(*) as total_sets
         FROM strength_sets ss
         JOIN activities a ON ss.activity_id = a.id
         WHERE ss.exercise_name = ? 
           AND a.start_time >= ?
-          AND ss.weight_kg > 0
+          AND ss.weight_lbs > 0
         GROUP BY DATE(a.start_time)
         ORDER BY date
         """,
@@ -131,13 +131,13 @@ async def get_volume_by_session(
             a.id as activity_id,
             DATE(a.start_time) as date,
             a.name as activity_name,
-            SUM(ss.weight_kg * ss.reps) as total_volume,
+            SUM(ss.weight_lbs * ss.reps) as total_volume,
             COUNT(*) as total_sets,
             SUM(ss.reps) as total_reps
         FROM activities a
         JOIN strength_sets ss ON a.id = ss.activity_id
         WHERE a.start_time >= ?
-          AND ss.weight_kg > 0
+          AND ss.weight_lbs > 0
     """
     params = [start_date]
     
@@ -162,12 +162,12 @@ async def get_personal_records(limit: int = Query(10, ge=1, le=50)):
         """
         SELECT 
             ss.exercise_name,
-            MAX(ss.weight_kg * (1 + ss.reps / 30.0)) as estimated_1rm,
-            MAX(ss.weight_kg) as max_weight_lifted,
+            MAX(ss.weight_lbs * (1 + ss.reps / 30.0)) as estimated_1rm,
+            MAX(ss.weight_lbs) as max_weight_lifted,
             DATE(a.start_time) as date_achieved
         FROM strength_sets ss
         JOIN activities a ON ss.activity_id = a.id
-        WHERE ss.weight_kg > 0
+        WHERE ss.weight_lbs > 0
         GROUP BY ss.exercise_name
         ORDER BY estimated_1rm DESC
         LIMIT ?
@@ -191,7 +191,7 @@ async def get_recent_strength_workouts(limit: int = Query(10, ge=1, le=50)):
             COUNT(DISTINCT ss.exercise_name) as exercise_count,
             COUNT(ss.id) as total_sets,
             SUM(ss.reps) as total_reps,
-            SUM(ss.weight_kg * ss.reps) as total_volume
+            SUM(ss.weight_lbs * ss.reps) as total_volume
         FROM activities a
         JOIN strength_sets ss ON a.id = ss.activity_id
         WHERE a.activity_type = 'strength_training'
@@ -220,11 +220,11 @@ async def get_volume_by_muscle_group(days: int = Query(30, ge=7, le=90)):
         """
         SELECT 
             ss.exercise_name,
-            SUM(ss.weight_kg * ss.reps) as total_volume,
+            SUM(ss.weight_lbs * ss.reps) as total_volume,
             COUNT(*) as total_sets
         FROM strength_sets ss
         JOIN activities a ON ss.activity_id = a.id
-        WHERE a.start_time >= ? AND ss.weight_kg > 0
+        WHERE a.start_time >= ? AND ss.weight_lbs > 0
         GROUP BY ss.exercise_name
         """,
         (start_date,)
@@ -286,7 +286,7 @@ async def get_key_lifts():
         JOIN activities a ON ss.activity_id = a.id
         WHERE a.start_time >= ?
           AND ss.exercise_name IS NOT NULL
-          AND ss.weight_kg > 0
+          AND ss.weight_lbs > 0
         GROUP BY ss.exercise_name
         ORDER BY session_count DESC
         LIMIT 10
@@ -307,15 +307,15 @@ async def get_key_lifts():
         recent_sets = execute_query(
             """
             SELECT 
-                ss.weight_kg,
+                ss.weight_lbs,
                 ss.reps,
-                ss.weight_kg * (1 + ss.reps / 30.0) as estimated_1rm,
+                ss.weight_lbs * (1 + ss.reps / 30.0) as estimated_1rm,
                 a.start_time
             FROM strength_sets ss
             JOIN activities a ON ss.activity_id = a.id
             WHERE ss.exercise_name = ?
               AND a.start_time >= ?
-              AND ss.weight_kg > 0
+              AND ss.weight_lbs > 0
               AND ss.reps > 0
             ORDER BY estimated_1rm DESC, a.start_time DESC
             LIMIT 1
@@ -327,13 +327,13 @@ async def get_key_lifts():
         four_week_old = execute_query(
             """
             SELECT 
-                MAX(ss.weight_kg * (1 + ss.reps / 30.0)) as estimated_1rm
+                MAX(ss.weight_lbs * (1 + ss.reps / 30.0)) as estimated_1rm
             FROM strength_sets ss
             JOIN activities a ON ss.activity_id = a.id
             WHERE ss.exercise_name = ?
               AND a.start_time >= ?
               AND a.start_time < ?
-              AND ss.weight_kg > 0
+              AND ss.weight_lbs > 0
               AND ss.reps > 0
             """,
             (exercise_name, (datetime.now() - timedelta(days=56)).strftime("%Y-%m-%d"), four_weeks_ago)
@@ -342,25 +342,25 @@ async def get_key_lifts():
         # Get volume trend (current 4 weeks vs previous 4 weeks)
         current_volume = execute_query(
             """
-            SELECT SUM(ss.weight_kg * ss.reps) as total_volume
+            SELECT SUM(ss.weight_lbs * ss.reps) as total_volume
             FROM strength_sets ss
             JOIN activities a ON ss.activity_id = a.id
             WHERE ss.exercise_name = ?
               AND a.start_time >= ?
-              AND ss.weight_kg > 0
+              AND ss.weight_lbs > 0
             """,
             (exercise_name, four_weeks_ago)
         )
         
         prev_volume = execute_query(
             """
-            SELECT SUM(ss.weight_kg * ss.reps) as total_volume
+            SELECT SUM(ss.weight_lbs * ss.reps) as total_volume
             FROM strength_sets ss
             JOIN activities a ON ss.activity_id = a.id
             WHERE ss.exercise_name = ?
               AND a.start_time >= ?
               AND a.start_time < ?
-              AND ss.weight_kg > 0
+              AND ss.weight_lbs > 0
             """,
             (exercise_name, (datetime.now() - timedelta(days=56)).strftime("%Y-%m-%d"), four_weeks_ago)
         )
@@ -372,7 +372,7 @@ async def get_key_lifts():
             FROM strength_sets ss
             JOIN activities a ON ss.activity_id = a.id
             WHERE ss.exercise_name = ?
-              AND ss.weight_kg > 0
+              AND ss.weight_lbs > 0
             """,
             (exercise_name,)
         )
@@ -414,7 +414,7 @@ async def get_key_lifts():
         
         key_lifts.append(KeyLiftCard(
             exercise_name=exercise_name,
-            best_recent_weight=best_recent["weight_kg"] if best_recent else None,
+            best_recent_weight=best_recent["weight_lbs"] if best_recent else None,
             best_recent_reps=best_recent["reps"] if best_recent else None,
             estimated_1rm=best_recent["estimated_1rm"] if best_recent else None,
             four_week_trend_lbs=four_week_trend_lbs,
@@ -438,8 +438,6 @@ async def get_training_balance(weeks: int = Query(12, ge=4, le=52)):
     """
     now = datetime.now()
     weeks_ago = now - timedelta(weeks=weeks)
-    # Use datetime string for comparison (ISO format: YYYY-MM-DD HH:MM:SS)
-    start_datetime = weeks_ago.strftime("%Y-%m-%d 00:00:00")
     
     # Calculate the range of weeks to include (from start week to current week)
     start_week_start = get_week_start(weeks_ago)
@@ -449,6 +447,10 @@ async def get_training_balance(weeks: int = Query(12, ge=4, le=52)):
     # Calculate number of weeks between start and current (inclusive)
     days_diff = (current_week_start - start_week_start).days
     num_weeks = (days_diff // 7) + 1  # +1 to include both start and end weeks
+    
+    # Use the week start (Monday) for SQL filter to include all days in the first week
+    # Convert date to datetime for SQL comparison (ISO format: YYYY-MM-DD HH:MM:SS)
+    start_datetime = datetime.combine(start_week_start, datetime.min.time()).strftime("%Y-%m-%d %H:%M:%S")
     
     weekly_data = {}
     for i in range(num_weeks):
@@ -558,12 +560,12 @@ async def get_training_frequency(
             ss.exercise_name,
             DATE(a.start_time) as workout_date,
             COUNT(*) as sets_count,
-            SUM(ss.weight_kg * ss.reps) as volume
+            SUM(ss.weight_lbs * ss.reps) as volume
         FROM strength_sets ss
         JOIN activities a ON ss.activity_id = a.id
         WHERE a.start_time >= ?
           AND ss.exercise_name IS NOT NULL
-          AND ss.weight_kg > 0
+          AND ss.weight_lbs > 0
         GROUP BY ss.exercise_name, DATE(a.start_time)
         ORDER BY workout_date DESC
         """,
@@ -641,8 +643,6 @@ async def get_volume_trends(weeks: int = Query(12, ge=4, le=52)):
     """
     now = datetime.now()
     weeks_ago = now - timedelta(weeks=weeks)
-    # Use datetime string for comparison (ISO format: YYYY-MM-DD HH:MM:SS)
-    start_datetime = weeks_ago.strftime("%Y-%m-%d 00:00:00")
     
     # Calculate the range of weeks to include (from start week to current week)
     start_week_start = get_week_start(weeks_ago)
@@ -661,6 +661,10 @@ async def get_volume_trends(weeks: int = Query(12, ge=4, le=52)):
         days_diff = (current_week_start - start_week_start).days
         num_weeks = (days_diff // 7) + 1
     
+    # Use the week start (Monday) for SQL filter to include all days in the first week
+    # Convert date to datetime for SQL comparison (ISO format: YYYY-MM-DD HH:MM:SS)
+    start_datetime = datetime.combine(start_week_start, datetime.min.time()).strftime("%Y-%m-%d %H:%M:%S")
+    
     weekly_totals = {}
     for i in range(num_weeks):
         week_start = start_week_start + timedelta(days=i * 7)
@@ -673,21 +677,24 @@ async def get_volume_trends(weeks: int = Query(12, ge=4, le=52)):
         }
     
     # Get weekly aggregations
-    weekly_data = execute_query(
-        """
-        SELECT 
-            DATE(a.start_time) as workout_date,
-            SUM(ss.weight_kg * ss.reps * 1.0) as tonnage,
-            COUNT(*) as sets_count
-        FROM strength_sets ss
-        JOIN activities a ON ss.activity_id = a.id
-        WHERE a.start_time >= ?
-          AND ss.weight_kg > 0
-        GROUP BY DATE(a.start_time)
-        ORDER BY workout_date DESC
-        """,
-        (start_datetime,)
-    )
+    try:
+        weekly_data = execute_query(
+            """
+            SELECT 
+                DATE(a.start_time) as workout_date,
+                SUM(ss.weight_lbs * ss.reps * 1.0) as tonnage,
+                COUNT(*) as sets_count
+            FROM strength_sets ss
+            JOIN activities a ON ss.activity_id = a.id
+            WHERE a.start_time >= ?
+              AND ss.weight_lbs > 0
+            GROUP BY DATE(a.start_time)
+            ORDER BY workout_date DESC
+            """,
+            (start_datetime,)
+        )
+    except Exception as e:
+        raise
     
     # Populate weeks with actual data
     for data in weekly_data:
@@ -749,8 +756,6 @@ async def get_muscle_comparison(
     
     now = datetime.now()
     weeks_ago = now - timedelta(weeks=weeks)
-    # Use datetime string for comparison (ISO format: YYYY-MM-DD HH:MM:SS)
-    start_datetime = weeks_ago.strftime("%Y-%m-%d 00:00:00")
     
     # Calculate the range of weeks to include (from start week to current week)
     start_week_start = get_week_start(weeks_ago)
@@ -760,6 +765,10 @@ async def get_muscle_comparison(
     # Calculate number of weeks between start and current (inclusive)
     days_diff = (current_week_start - start_week_start).days
     num_weeks = (days_diff // 7) + 1  # +1 to include both start and end weeks
+    
+    # Use the week start (Monday) for SQL filter to include all days in the first week
+    # Convert date to datetime for SQL comparison (ISO format: YYYY-MM-DD HH:MM:SS)
+    start_datetime = datetime.combine(start_week_start, datetime.min.time()).strftime("%Y-%m-%d %H:%M:%S")
     
     weekly_data = {}
     for i in range(num_weeks):
@@ -782,7 +791,7 @@ async def get_muscle_comparison(
         JOIN activities a ON ss.activity_id = a.id
         WHERE a.start_time >= ?
           AND ss.exercise_name IS NOT NULL
-          AND ss.weight_kg > 0
+          AND ss.weight_lbs > 0
         GROUP BY ss.exercise_name, DATE(a.start_time)
         ORDER BY workout_date DESC
         """,
@@ -867,7 +876,7 @@ async def get_drill_down(
         FROM activities a
         JOIN strength_sets ss ON a.id = ss.activity_id
         WHERE DATE(a.start_time) >= ? AND DATE(a.start_time) <= ?
-          AND ss.weight_kg > 0
+          AND ss.weight_lbs > 0
     """
     params = [start_date.isoformat(), end_date.isoformat()]
     
@@ -907,7 +916,7 @@ async def get_drill_down(
                 FROM strength_sets ss
                 WHERE ss.activity_id = ?
                   AND ss.exercise_name IS NOT NULL
-                  AND ss.weight_kg > 0
+                  AND ss.weight_lbs > 0
             """
             activity_sets = execute_query(sets_query, (act["activity_id"],))
             
@@ -934,7 +943,7 @@ async def get_drill_down(
             SELECT ss.*
             FROM strength_sets ss
             WHERE ss.activity_id = ?
-              AND ss.weight_kg > 0
+              AND ss.weight_lbs > 0
         """
         sets_params = [act["activity_id"]]
         
@@ -968,7 +977,7 @@ async def get_drill_down(
                     exercise_name=s.get("exercise_name"),
                     set_number=s.get("set_number"),
                     reps=s.get("reps"),
-                    weight_kg=s.get("weight_kg"),
+                    weight_lbs=s.get("weight_lbs"),
                     duration_seconds=s.get("duration_seconds")
                 )
                 for s in activity_sets

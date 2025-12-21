@@ -174,7 +174,7 @@ class StrengthSetBase(BaseModel):
     exercise_name: Optional[str] = None
     set_number: Optional[int] = None
     reps: Optional[int] = None
-    weight_kg: Optional[float] = None
+    weight_lbs: Optional[float] = None
     duration_seconds: Optional[float] = None  # Float for precise duration
 
 

@@ -261,7 +261,7 @@ class SyncService:
                 if set_type == "REST":
                     exercise_name = "Rest"
                     reps = None
-                    weight_kg = None
+                    weight_lbs = None
                 else:
                     # Get exercise name from exercises array
                     exercises = exercise_set.get("exercises", [])
@@ -283,10 +283,11 @@ class SyncService:
                     reps = exercise_set.get("repetitionCount")
                     weight_raw = exercise_set.get("weight")
                     
-                    # Weight appears to be in milligrams, convert to kg
-                    weight_kg = None
+                    # Weight appears to be in grams, convert directly to lbs to avoid rounding errors
+                    # 1 gram = 0.00220462 lbs
+                    weight_lbs = None
                     if weight_raw and weight_raw > 0:
-                        weight_kg = weight_raw / 1000.0  # Convert mg to kg
+                        weight_lbs = weight_raw * 0.00220462  # Convert grams directly to lbs
                     
                     # Skip warmup cardio sets (no reps, no meaningful data)
                     if exercise_category == "CARDIO" and not reps:
@@ -294,7 +295,7 @@ class SyncService:
                 
                 execute_write(
                     """INSERT INTO strength_sets 
-                       (activity_id, exercise_name, set_number, reps, weight_kg, 
+                       (activity_id, exercise_name, set_number, reps, weight_lbs, 
                         duration_seconds, raw_json)
                        VALUES (?, ?, ?, ?, ?, ?, ?)""",
                     (
@@ -302,7 +303,7 @@ class SyncService:
                         exercise_name,
                         set_num,  # Use actual sequence number including rests
                         reps,
-                        weight_kg,
+                        weight_lbs,
                         duration,
                         json.dumps(exercise_set)
                     )

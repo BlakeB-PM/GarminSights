@@ -155,12 +155,12 @@ class CoachService:
             """
             SELECT 
                 ss.exercise_name,
-                MAX(ss.weight_kg) as max_weight,
-                MAX(ss.weight_kg * (1 + ss.reps / 30.0)) as estimated_1rm,
+                MAX(ss.weight_lbs) as max_weight,
+                MAX(ss.weight_lbs * (1 + ss.reps / 30.0)) as estimated_1rm,
                 COUNT(*) as total_sets
             FROM strength_sets ss
             JOIN activities a ON ss.activity_id = a.id
-            WHERE a.start_time >= ? AND ss.weight_kg > 0
+            WHERE a.start_time >= ? AND ss.weight_lbs > 0
             GROUP BY ss.exercise_name
             ORDER BY estimated_1rm DESC
             LIMIT 10
