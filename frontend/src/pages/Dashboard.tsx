@@ -2,15 +2,34 @@ import { useEffect, useState } from 'react';
 import { Header } from '../components/layout/Header';
 import { StatCard } from '../components/dashboard/StatCard';
 import { ActivityHeatmap } from '../components/dashboard/ActivityHeatmap';
+import { RecoveryScore } from '../components/dashboard/RecoveryScore';
+import { ActivityBreakdown } from '../components/dashboard/ActivityBreakdown';
+import { SleepStages } from '../components/dashboard/SleepStages';
+import { BodyBatteryTrend } from '../components/dashboard/BodyBatteryTrend';
+import { StressDistribution } from '../components/dashboard/StressDistribution';
+import { TrainingLoadCard } from '../components/dashboard/TrainingLoadCard';
+import { StrengthSummary } from '../components/dashboard/StrengthSummary';
+import { DateRangeSelector } from '../components/dashboard/DateRangeSelector';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
-import { Moon, Battery, Footprints, Activity, TrendingUp } from 'lucide-react';
+import { Moon, Battery, Footprints, Activity, Zap } from 'lucide-react';
 import {
   getDashboardSummary,
   getActivityHeatmap,
   getRecoveryStatus,
+  getTrainingLoad,
+  getActivityBreakdown,
+  getStressDistribution,
+  getSleepData,
+  getDailyData,
+  getDailyTrend,
   type DashboardSummary,
   type ActivityHeatmapDay,
   type RecoveryStatus,
+  type TrainingLoad,
+  type ActivityBreakdown as ActivityBreakdownType,
+  type StressDistribution as StressDistributionData,
+  type SleepData,
+  type DailyData,
 } from '../lib/api';
 import { formatNumber } from '../lib/utils';
 import {
@@ -24,23 +43,98 @@ import {
 } from 'recharts';
 
 export function Dashboard() {
+  // Initialize date range to current week
+  const today = new Date();
+  const getWeekStart = (date: Date): Date => {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    return new Date(d.setDate(diff));
+  };
+  const getWeekEnd = (date: Date): Date => {
+    const weekStart = getWeekStart(date);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 6);
+    return weekEnd;
+  };
+
+  const [startDate, setStartDate] = useState(() => getWeekStart(today).toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(() => getWeekEnd(today).toISOString().split('T')[0]);
+  
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [heatmap, setHeatmap] = useState<ActivityHeatmapDay[]>([]);
   const [recovery, setRecovery] = useState<RecoveryStatus | null>(null);
+  const [trainingLoad, setTrainingLoad] = useState<TrainingLoad | null>(null);
+  const [activityBreakdown, setActivityBreakdown] = useState<ActivityBreakdownType | null>(null);
+  const [stressDistribution, setStressDistribution] = useState<StressDistributionData | null>(null);
+  const [sleepData, setSleepData] = useState<SleepData[]>([]);
+  const [latestDaily, setLatestDaily] = useState<DailyData | null>(null);
+  const [intensityMinutes, setIntensityMinutes] = useState<{ moderate: number; vigorous: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadData() {
+      setLoading(true);
+      setError(null); // Clear any previous errors
       try {
-        const [summaryData, heatmapData, recoveryData] = await Promise.all([
-          getDashboardSummary().catch(() => null),
-          getActivityHeatmap(30).catch(() => []),
-          getRecoveryStatus().catch(() => null),
+        // Calculate days for date range
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        
+        const [
+          summaryData,
+          heatmapData,
+          recoveryData,
+          trainingLoadData,
+          activityBreakdownData,
+          stressDistributionData,
+          sleepDataArray,
+          dailyDataArray,
+        ] = await Promise.all([
+          getDashboardSummary(startDate, endDate).catch(() => null),
+          getActivityHeatmap(30).catch(() => []), // Heatmap always shows last 30 days
+          getRecoveryStatus().catch(() => null), // Recovery is always current
+          getTrainingLoad(startDate, endDate).catch(() => null),
+          getActivityBreakdown(undefined, startDate, endDate).catch(() => null),
+          getStressDistribution(undefined, startDate, endDate).catch(() => null),
+          getSleepData(undefined, startDate, endDate).catch(() => []),
+          getDailyData(undefined, startDate, endDate).catch(() => []),
         ]);
+        
         setSummary(summaryData);
         setHeatmap(heatmapData || []);
         setRecovery(recoveryData);
+        setTrainingLoad(trainingLoadData);
+        setActivityBreakdown(activityBreakdownData);
+        setStressDistribution(stressDistributionData);
+        setSleepData(sleepDataArray);
+        
+        // Get the latest daily from the filtered data (already sorted by date desc from API)
+        if (dailyDataArray.length > 0) {
+          // Find the most recent daily within or closest to our date range
+          const latest = dailyDataArray.find(d => {
+            const dDate = new Date(d.date);
+            const end = new Date(endDate);
+            return dDate <= end;
+          }) || dailyDataArray[0];
+          
+          setLatestDaily(latest);
+          
+          // Calculate total intensity minutes across the date range
+          const totalIntensity = dailyDataArray.reduce((acc, d) => {
+            return {
+              moderate: acc.moderate + (d.intensity_minutes_moderate || 0),
+              vigorous: acc.vigorous + (d.intensity_minutes_vigorous || 0),
+            };
+          }, { moderate: 0, vigorous: 0 });
+          
+          setIntensityMinutes(totalIntensity);
+        } else {
+          setLatestDaily(null);
+          setIntensityMinutes(null);
+        }
       } catch (err) {
         console.error('Failed to load dashboard data:', err);
         setError('Could not connect to backend. Make sure the server is running.');
@@ -49,7 +143,7 @@ export function Dashboard() {
       }
     }
     loadData();
-  }, []);
+  }, [startDate, endDate]);
 
   if (loading) {
     return (
@@ -70,6 +164,11 @@ export function Dashboard() {
     );
   }
 
+  const handleDateChange = (newStartDate: string, newEndDate: string) => {
+    setStartDate(newStartDate);
+    setEndDate(newEndDate);
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       <Header
@@ -77,8 +176,30 @@ export function Dashboard() {
         subtitle="Your fitness overview at a glance"
       />
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <DateRangeSelector
+        startDate={startDate}
+        endDate={endDate}
+        onDateChange={handleDateChange}
+      />
+
+      {/* Hero Section: Recovery Score & Training Load */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {recovery && (
+          <RecoveryScore
+            recoveryScore={recovery.recovery_score}
+            status={recovery.status}
+            message={recovery.message}
+            trainingLoadRatio={trainingLoad?.load_ratio}
+            sleepAverage={recovery.details?.sleep_7day_avg ?? undefined}
+            bodyBattery={recovery.details?.body_battery}
+            stress={recovery.details?.stress_average}
+          />
+        )}
+        <TrainingLoadCard data={trainingLoad} loading={loading} />
+      </div>
+
+      {/* Top Stats Row */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
         <StatCard
           title="Sleep Score"
           value={summary?.last_sleep_score ?? '—'}
@@ -100,8 +221,6 @@ export function Dashboard() {
           value={formatNumber(summary?.weekly_steps ?? 0)}
           subtitle="Last 7 days"
           icon={<Footprints className="w-5 h-5 text-accent" />}
-          trend="up"
-          trendValue="+12%"
         />
         
         <StatCard
@@ -110,61 +229,35 @@ export function Dashboard() {
           subtitle="Last 7 days"
           icon={<Activity className="w-5 h-5 text-accent" />}
         />
+        
+        <StatCard
+          title="Intensity Minutes"
+          value={
+            intensityMinutes
+              ? formatNumber(intensityMinutes.moderate + intensityMinutes.vigorous)
+              : '—'
+          }
+          subtitle={`${startDate === endDate ? 'Today' : 'Total'}`}
+          icon={<Zap className="w-5 h-5 text-accent" />}
+        />
       </div>
 
-      {/* Recovery Status & Heatmap */}
+      {/* Second Row: Activity Breakdown & Sleep Stages */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recovery Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-accent" />
-              Recovery Status
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {recovery ? (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-4xl font-bold font-mono text-accent">
-                      {recovery.recovery_score ?? '—'}
-                    </p>
-                    <p className="text-sm text-gray-400 capitalize">
-                      {recovery.status ?? 'Unknown'}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm text-gray-300">{recovery.message ?? ''}</p>
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-3 gap-4 pt-4 border-t border-card-border">
-                  <div>
-                    <p className="text-xs text-gray-500">Sleep</p>
-                    <p className="text-lg font-mono">{recovery.details?.sleep_score ?? '—'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">Body Battery</p>
-                    <p className="text-lg font-mono">{recovery.details?.body_battery ?? '—'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">Stress</p>
-                    <p className="text-lg font-mono">{recovery.details?.stress_average ?? '—'}</p>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                <p>No recovery data available</p>
-                <p className="text-sm mt-1">Sync your data to see recovery stats</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <ActivityBreakdown data={activityBreakdown} loading={loading} />
+        <SleepStages latestSleep={sleepData[0] || null} sleepData={sleepData} loading={loading} />
+      </div>
 
-        {/* Activity Heatmap */}
+      {/* Third Row: Body Battery Trend & Stress Distribution */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <BodyBatteryTrend latestDaily={latestDaily} loading={loading} startDate={startDate} endDate={endDate} />
+        <StressDistribution data={stressDistribution} loading={loading} />
+      </div>
+
+      {/* Fourth Row: Activity Heatmap & Strength Summary */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <ActivityHeatmap data={heatmap} days={30} />
+        <StrengthSummary loading={loading} />
       </div>
 
       {/* Sleep Trend Chart */}

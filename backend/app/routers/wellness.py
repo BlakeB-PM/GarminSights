@@ -165,32 +165,137 @@ async def get_daily_average(days: int = Query(7, ge=1, le=90)):
 @router.get("/dailies/trend")
 async def get_daily_trend(
     metric: str = Query("steps", pattern="^(steps|body_battery_high|stress_average)$"),
-    days: int = Query(30, ge=7, le=90)
+    days: Optional[int] = Query(None, ge=1, le=365),
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)")
 ):
     """
     Get trend data for a specific daily metric.
     
     Args:
         metric: One of 'steps', 'body_battery_high', 'stress_average'
-        days: Number of days to include
+        days: Number of days to include (alternative to date range)
+        start_date: Start date (YYYY-MM-DD)
+        end_date: End date (YYYY-MM-DD)
     """
-    start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    if start_date and end_date:
+        period_start = start_date
+        period_end = end_date
+    elif days:
+        period_start = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        period_end = datetime.now().strftime("%Y-%m-%d")
+    else:
+        # Default to last 30 days
+        period_start = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+        period_end = datetime.now().strftime("%Y-%m-%d")
     
-    return execute_query(
-        f"""
-        SELECT date, {metric} as value
-        FROM dailies
-        WHERE date >= ? AND {metric} IS NOT NULL
-        ORDER BY date
-        """,
-        (start_date,)
+    if start_date and end_date:
+        query = f"""
+            SELECT date, {metric} as value
+            FROM dailies
+            WHERE date >= ? AND date <= ? AND {metric} IS NOT NULL
+            ORDER BY date
+        """
+        params = (period_start, period_end)
+    else:
+        query = f"""
+            SELECT date, {metric} as value
+            FROM dailies
+            WHERE date >= ? AND {metric} IS NOT NULL
+            ORDER BY date
+        """
+        params = (period_start,)
+    
+    return execute_query(query, params)
+
+
+@router.get("/stress/distribution")
+async def get_stress_distribution(
+    days: int = Query(None, ge=1, le=365, description="Number of days back (alternative to date range)"),
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)")
+):
+    """
+    Get stress duration breakdown by category.
+    Returns seconds in each stress level.
+    """
+    if start_date and end_date:
+        period_start = start_date
+    elif days:
+        period_start = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    else:
+        # Default to last 7 days
+        period_start = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+    
+    # Build query with optional end_date
+    if start_date and end_date:
+        query = """
+            SELECT 
+                COALESCE(SUM(low_stress_duration), 0) as low_stress_seconds,
+                COALESCE(SUM(medium_stress_duration), 0) as medium_stress_seconds,
+                COALESCE(SUM(high_stress_duration), 0) as high_stress_seconds,
+                COALESCE(SUM(rest_stress_duration), 0) as rest_stress_seconds,
+                COALESCE(SUM(activity_stress_duration), 0) as activity_stress_seconds,
+                AVG(stress_average) as avg_stress,
+                COUNT(*) as days_with_data
+            FROM dailies
+            WHERE date >= ? AND date <= ?
+        """
+        params = (period_start, end_date)
+    else:
+        query = """
+            SELECT 
+                COALESCE(SUM(low_stress_duration), 0) as low_stress_seconds,
+                COALESCE(SUM(medium_stress_duration), 0) as medium_stress_seconds,
+                COALESCE(SUM(high_stress_duration), 0) as high_stress_seconds,
+                COALESCE(SUM(rest_stress_duration), 0) as rest_stress_seconds,
+                COALESCE(SUM(activity_stress_duration), 0) as activity_stress_seconds,
+                AVG(stress_average) as avg_stress,
+                COUNT(*) as days_with_data
+            FROM dailies
+            WHERE date >= ?
+        """
+        params = (period_start,)
+    
+    result = execute_query(query, params)
+    
+    if not result or not result[0]:
+        return {
+            "low_stress_seconds": 0,
+            "medium_stress_seconds": 0,
+            "high_stress_seconds": 0,
+            "rest_stress_seconds": 0,
+            "activity_stress_seconds": 0,
+            "avg_stress": None,
+            "days_with_data": 0
+        }
+    
+    data = result[0]
+    total_seconds = (
+        (data.get("low_stress_seconds") or 0) +
+        (data.get("medium_stress_seconds") or 0) +
+        (data.get("high_stress_seconds") or 0) +
+        (data.get("rest_stress_seconds") or 0) +
+        (data.get("activity_stress_seconds") or 0)
     )
+    
+    return {
+        "low_stress_seconds": int(data.get("low_stress_seconds") or 0),
+        "medium_stress_seconds": int(data.get("medium_stress_seconds") or 0),
+        "high_stress_seconds": int(data.get("high_stress_seconds") or 0),
+        "rest_stress_seconds": int(data.get("rest_stress_seconds") or 0),
+        "activity_stress_seconds": int(data.get("activity_stress_seconds") or 0),
+        "total_seconds": int(total_seconds),
+        "avg_stress": round(data.get("avg_stress") or 0, 1) if data.get("avg_stress") else None,
+        "days_with_data": data.get("days_with_data") or 0
+    }
 
 
 @router.get("/recovery")
 async def get_recovery_status():
     """
     Get recovery status based on sleep and body battery.
+    Enhanced with 7-day sleep average and HRV trend.
     
     Returns a composite recovery score and status.
     """
@@ -216,14 +321,38 @@ async def get_recovery_status():
     
     latest = result[0]
     
+    # Get 7-day sleep average for better context
+    seven_days_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+    sleep_avg_result = execute_query(
+        """
+        SELECT AVG(sleep_score) as avg_sleep_score
+        FROM sleep
+        WHERE date >= ?
+        """,
+        (seven_days_ago,)
+    )
+    sleep_7day_avg = sleep_avg_result[0]["avg_sleep_score"] if sleep_avg_result and sleep_avg_result[0].get("avg_sleep_score") else None
+    
     # Calculate simple recovery score
     sleep_score = latest.get("sleep_score") or 0
     body_battery = latest.get("body_battery_high") or 0
     stress = latest.get("stress_average") or 50
+    hrv = latest.get("hrv_average")
     
     # Weighted average (sleep 40%, body battery 40%, inverse stress 20%)
+    # If 7-day sleep avg is available, use average of last night and 7-day avg
+    effective_sleep = sleep_score
+    if sleep_7day_avg:
+        effective_sleep = (sleep_score * 0.6) + (sleep_7day_avg * 0.4)
+    
     stress_factor = max(0, (100 - stress)) / 100
-    recovery_score = (sleep_score * 0.4) + (body_battery * 0.4) + (stress_factor * 100 * 0.2)
+    recovery_score = (effective_sleep * 0.4) + (body_battery * 0.4) + (stress_factor * 100 * 0.2)
+    
+    # HRV adjustment if available (small boost if HRV is good)
+    if hrv and hrv > 0:
+        # Normalize HRV (assuming typical range 20-80ms, adjust based on your data)
+        hrv_factor = min(1.0, max(0, (hrv - 20) / 60))
+        recovery_score = recovery_score * 0.95 + (hrv_factor * 100 * 0.05)
     
     # Determine status
     if recovery_score >= 80:
@@ -245,8 +374,10 @@ async def get_recovery_status():
         "message": message,
         "details": {
             "sleep_score": sleep_score,
+            "sleep_7day_avg": round(sleep_7day_avg, 1) if sleep_7day_avg else None,
             "body_battery": body_battery,
-            "stress_average": stress
+            "stress_average": stress,
+            "hrv_average": round(hrv, 1) if hrv else None
         },
         "trend": result
     }
