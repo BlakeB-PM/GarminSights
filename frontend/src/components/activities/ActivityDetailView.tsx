@@ -6,7 +6,9 @@ import {
   Heart, 
   Gauge, 
   Mountain,
-  Activity as ActivityIcon
+  Activity as ActivityIcon,
+  Zap,
+  Timer
 } from 'lucide-react';
 
 interface ActivityDetailViewProps {
@@ -26,6 +28,47 @@ function DataItem({ label, value }: { label: string; value: string | number | nu
     </div>
   );
 }
+
+// Format seconds to MM:SS or HH:MM:SS
+function formatZoneTime(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  if (mins < 60) {
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
+  const hours = Math.floor(mins / 60);
+  const remainingMins = mins % 60;
+  return `${hours}:${remainingMins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
+// Format power interval key to readable label
+function formatPowerInterval(seconds: string): string {
+  const secs = parseInt(seconds, 10);
+  if (secs < 60) return `${secs}s`;
+  if (secs < 3600) return `${Math.floor(secs / 60)}min`;
+  return `${Math.floor(secs / 3600)}hr`;
+}
+
+// HR Zone colors (matching Garmin's zone colors)
+const HR_ZONE_COLORS = [
+  'bg-gray-500',      // Zone 1 - Recovery (gray)
+  'bg-blue-500',      // Zone 2 - Easy (blue)
+  'bg-green-500',     // Zone 3 - Aerobic (green)
+  'bg-yellow-500',    // Zone 4 - Threshold (yellow)
+  'bg-red-500',       // Zone 5 - Anaerobic (red)
+];
+
+// Power Zone colors (matching common power zone schemes)
+const POWER_ZONE_COLORS = [
+  'bg-gray-400',      // Zone 1 - Active Recovery
+  'bg-blue-400',      // Zone 2 - Endurance
+  'bg-green-400',     // Zone 3 - Tempo
+  'bg-yellow-400',    // Zone 4 - Threshold
+  'bg-orange-400',    // Zone 5 - VO2max
+  'bg-red-400',       // Zone 6 - Anaerobic
+  'bg-purple-400',    // Zone 7 - Neuromuscular
+];
 
 // Legacy functions kept for backward compatibility, but we'll use dual format functions
 function formatPace(speedMs: number | undefined): string | null {
@@ -50,9 +93,12 @@ export function ActivityDetailView({ activity }: ActivityDetailViewProps) {
 
   const activityType = activity.activity_type?.toLowerCase() || '';
   const isRunning = activityType.includes('running') || activityType === 'walking' || activityType === 'rucking';
-  const isCycling = activityType.includes('cycling') || activityType === 'biking';
+  const isCycling = activityType.includes('cycling') || activityType === 'biking' || activityType.includes('virtual_ride') || activityType.includes('indoor_cycling');
   const isStrength = activityType === 'strength_training';
   const isCardio = isRunning || isCycling;
+  
+  // Check if this activity has power data (cycling with power meter or smart trainer)
+  const hasPowerData = activity.average_power != null && activity.average_power > 0;
   
   // Calculate strength training summary
   let strengthSummary = null;
@@ -271,6 +317,223 @@ export function ActivityDetailView({ activity }: ActivityDetailViewProps) {
               <DataItem 
                 label="Training Effect" 
                 value={activity.training.training_effect_label} 
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Cycling Power Metrics */}
+      {isCycling && hasPowerData && (
+        <div>
+          <h4 className="flex items-center gap-2 text-sm font-medium text-gray-300 mb-3">
+            <Zap className="w-4 h-4 text-accent" />
+            Power
+          </h4>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <DataItem 
+              label="Avg Power" 
+              value={`${Math.round(activity.average_power!)} W`} 
+            />
+            {activity.normalized_power != null && (
+              <DataItem 
+                label="Normalized Power" 
+                value={`${Math.round(activity.normalized_power)} W`} 
+              />
+            )}
+            {activity.max_power != null && (
+              <DataItem 
+                label="Max Power" 
+                value={`${Math.round(activity.max_power)} W`} 
+              />
+            )}
+            {activity.max_20min_power != null && (
+              <DataItem 
+                label="20min Power" 
+                value={`${Math.round(activity.max_20min_power)} W`} 
+              />
+            )}
+            {activity.max_20min_power != null && (
+              <DataItem 
+                label="Est. FTP (95%)" 
+                value={`${Math.round(activity.max_20min_power * 0.95)} W`} 
+              />
+            )}
+            {activity.cadence != null && (
+              <DataItem 
+                label="Avg Cadence" 
+                value={`${activity.cadence} rpm`} 
+              />
+            )}
+            {activity.max_cadence != null && (
+              <DataItem 
+                label="Max Cadence" 
+                value={`${activity.max_cadence} rpm`} 
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* HR Zones */}
+      {activity.hr_zones && Object.keys(activity.hr_zones).length > 0 && (() => {
+        const zones = activity.hr_zones!;
+        const totalTime = Object.values(zones).reduce((sum, val) => sum + val, 0);
+        
+        return (
+          <div>
+            <h4 className="flex items-center gap-2 text-sm font-medium text-gray-300 mb-3">
+              <Heart className="w-4 h-4 text-accent" />
+              Heart Rate Zones
+            </h4>
+            <div className="space-y-2">
+              {/* Zone bar visualization */}
+              <div className="flex h-6 rounded-lg overflow-hidden">
+                {Object.entries(zones)
+                  .sort(([a], [b]) => parseInt(a.split('_')[1]) - parseInt(b.split('_')[1]))
+                  .map(([zone, seconds], idx) => {
+                    const percentage = totalTime > 0 ? (seconds / totalTime) * 100 : 0;
+                    if (percentage < 1) return null;
+                    return (
+                      <div
+                        key={zone}
+                        className={cn(HR_ZONE_COLORS[idx], 'flex items-center justify-center text-xs font-medium text-white')}
+                        style={{ width: `${percentage}%` }}
+                        title={`Zone ${idx + 1}: ${formatZoneTime(seconds)} (${percentage.toFixed(0)}%)`}
+                      >
+                        {percentage > 10 && `Z${idx + 1}`}
+                      </div>
+                    );
+                  })}
+              </div>
+              {/* Zone breakdown */}
+              <div className="grid grid-cols-5 gap-2 text-xs">
+                {Object.entries(zones)
+                  .sort(([a], [b]) => parseInt(a.split('_')[1]) - parseInt(b.split('_')[1]))
+                  .map(([zone, seconds], idx) => {
+                    const percentage = totalTime > 0 ? (seconds / totalTime) * 100 : 0;
+                    return (
+                      <div key={zone} className="text-center">
+                        <div className={cn('w-3 h-3 rounded-full mx-auto mb-1', HR_ZONE_COLORS[idx])} />
+                        <div className="text-gray-400">Zone {idx + 1}</div>
+                        <div className="font-mono">{formatZoneTime(seconds)}</div>
+                        <div className="text-gray-500">{percentage.toFixed(0)}%</div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Power Zones */}
+      {activity.power_zones && Object.keys(activity.power_zones).length > 0 && (() => {
+        const zones = activity.power_zones!;
+        const totalTime = Object.values(zones).reduce((sum, val) => sum + val, 0);
+        const activeZones = Object.entries(zones).filter(([, seconds]) => seconds > 0);
+        
+        return (
+          <div>
+            <h4 className="flex items-center gap-2 text-sm font-medium text-gray-300 mb-3">
+              <Zap className="w-4 h-4 text-accent" />
+              Power Zones
+            </h4>
+            <div className="space-y-2">
+              {/* Zone bar visualization */}
+              <div className="flex h-6 rounded-lg overflow-hidden">
+                {activeZones
+                  .sort(([a], [b]) => parseInt(a.split('_')[1]) - parseInt(b.split('_')[1]))
+                  .map(([zone, seconds]) => {
+                    const idx = parseInt(zone.split('_')[1]) - 1;
+                    const percentage = totalTime > 0 ? (seconds / totalTime) * 100 : 0;
+                    if (percentage < 1) return null;
+                    return (
+                      <div
+                        key={zone}
+                        className={cn(POWER_ZONE_COLORS[idx], 'flex items-center justify-center text-xs font-medium text-white')}
+                        style={{ width: `${percentage}%` }}
+                        title={`Zone ${idx + 1}: ${formatZoneTime(seconds)} (${percentage.toFixed(0)}%)`}
+                      >
+                        {percentage > 10 && `Z${idx + 1}`}
+                      </div>
+                    );
+                  })}
+              </div>
+              {/* Zone breakdown */}
+              <div className="grid grid-cols-7 gap-1 text-xs">
+                {Object.entries(zones)
+                  .sort(([a], [b]) => parseInt(a.split('_')[1]) - parseInt(b.split('_')[1]))
+                  .map(([zone, seconds]) => {
+                    const idx = parseInt(zone.split('_')[1]) - 1;
+                    const percentage = totalTime > 0 ? (seconds / totalTime) * 100 : 0;
+                    return (
+                      <div key={zone} className="text-center">
+                        <div className={cn('w-3 h-3 rounded-full mx-auto mb-1', POWER_ZONE_COLORS[idx])} />
+                        <div className="text-gray-400">Z{idx + 1}</div>
+                        <div className="font-mono text-[10px]">{formatZoneTime(seconds)}</div>
+                        {percentage > 0 && <div className="text-gray-500">{percentage.toFixed(0)}%</div>}
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Power Curve */}
+      {activity.power_curve && Object.keys(activity.power_curve).length > 0 && (() => {
+        const curve = activity.power_curve!;
+        const sortedIntervals = Object.entries(curve).sort(([a], [b]) => parseInt(a) - parseInt(b));
+        
+        return (
+          <div>
+            <h4 className="flex items-center gap-2 text-sm font-medium text-gray-300 mb-3">
+              <Timer className="w-4 h-4 text-accent" />
+              Best Power
+            </h4>
+            <div className="overflow-x-auto">
+              <div className="flex gap-2 min-w-max">
+                {sortedIntervals.map(([interval, power]) => (
+                  <div 
+                    key={interval} 
+                    className="p-2 bg-background rounded-lg text-center min-w-[60px]"
+                  >
+                    <div className="text-xs text-gray-400 mb-1">{formatPowerInterval(interval)}</div>
+                    <div className="font-mono font-medium">{power}W</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Intensity Minutes */}
+      {(activity.intensity_minutes_moderate != null || activity.intensity_minutes_vigorous != null) && (
+        <div>
+          <h4 className="flex items-center gap-2 text-sm font-medium text-gray-300 mb-3">
+            <TrendingUp className="w-4 h-4 text-accent" />
+            Intensity Minutes
+          </h4>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {activity.intensity_minutes_moderate != null && (
+              <DataItem 
+                label="Moderate" 
+                value={`${activity.intensity_minutes_moderate} min`} 
+              />
+            )}
+            {activity.intensity_minutes_vigorous != null && (
+              <DataItem 
+                label="Vigorous" 
+                value={`${activity.intensity_minutes_vigorous} min`} 
+              />
+            )}
+            {(activity.intensity_minutes_moderate != null || activity.intensity_minutes_vigorous != null) && (
+              <DataItem 
+                label="Total (2x Vigorous)" 
+                value={`${(activity.intensity_minutes_moderate || 0) + (activity.intensity_minutes_vigorous || 0) * 2} min`} 
               />
             )}
           </div>

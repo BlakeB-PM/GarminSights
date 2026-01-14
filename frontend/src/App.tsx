@@ -7,6 +7,7 @@ import { Dashboard } from './pages/Dashboard';
 import { DataViewer } from './pages/DataViewer';
 import { ActivityLog } from './pages/ActivityLog';
 import { StrengthAnalytics } from './pages/StrengthAnalytics';
+import { CyclingAnalytics } from './pages/CyclingAnalytics';
 import { Coach } from './pages/Coach';
 import { Settings } from './pages/Settings';
 import { syncData } from './lib/api';
@@ -54,6 +55,7 @@ function AppLayout() {
             <Route path="/data" element={<DataViewer />} />
             <Route path="/activities" element={<ActivityLog />} />
             <Route path="/strength" element={<StrengthAnalytics />} />
+            <Route path="/cycling" element={<CyclingAnalytics />} />
             <Route path="/coach" element={<Coach />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>

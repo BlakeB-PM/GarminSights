@@ -71,10 +71,25 @@ class ActivityDetails(Activity):
     
     # Performance metrics
     cadence: Optional[int] = None  # steps/min or rev/min
+    max_cadence: Optional[int] = None  # max cadence for cycling
     stride_length: Optional[float] = None  # meters
     average_power: Optional[float] = None  # watts
     max_power: Optional[float] = None  # watts
     normalized_power: Optional[float] = None  # watts
+    max_20min_power: Optional[float] = None  # watts - useful for FTP estimation
+    
+    # Intensity minutes
+    intensity_minutes_moderate: Optional[int] = None
+    intensity_minutes_vigorous: Optional[int] = None
+    
+    # HR Zones (time in seconds per zone)
+    hr_zones: Optional[dict] = None  # {"zone_1": 120, "zone_2": 300, ...}
+    
+    # Power Zones (time in seconds per zone - cycling)
+    power_zones: Optional[dict] = None  # {"zone_1": 30, "zone_2": 60, ...}
+    
+    # Power Curve (max avg power over intervals in seconds)
+    power_curve: Optional[dict] = None  # {"1": 500, "5": 450, "60": 300, ...}
     
     # Splits and laps
     splits: Optional[list[dict]] = None

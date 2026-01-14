@@ -22,6 +22,8 @@ import {
   getSleepData,
   getDailyData,
   getDailyTrend,
+  getTrainingBalance,
+  getSleepTrend,
   type DashboardSummary,
   type ActivityHeatmapDay,
   type RecoveryStatus,
@@ -30,16 +32,20 @@ import {
   type StressDistribution as StressDistributionData,
   type SleepData,
   type DailyData,
+  type TrainingBalanceData,
 } from '../lib/api';
 import { formatNumber } from '../lib/utils';
 import {
   LineChart,
   Line,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  Legend,
 } from 'recharts';
 
 export function Dashboard() {
@@ -70,6 +76,8 @@ export function Dashboard() {
   const [sleepData, setSleepData] = useState<SleepData[]>([]);
   const [latestDaily, setLatestDaily] = useState<DailyData | null>(null);
   const [intensityMinutes, setIntensityMinutes] = useState<{ moderate: number; vigorous: number } | null>(null);
+  const [trainingBalance, setTrainingBalance] = useState<TrainingBalanceData[]>([]);
+  const [sleepTrend, setSleepTrend] = useState<Array<{ date: string; sleep_score: number; hrv_average?: number | null }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -92,6 +100,8 @@ export function Dashboard() {
           stressDistributionData,
           sleepDataArray,
           dailyDataArray,
+          trainingBalanceData,
+          sleepTrendData,
         ] = await Promise.all([
           getDashboardSummary(startDate, endDate).catch(() => null),
           getActivityHeatmap(30).catch(() => []), // Heatmap always shows last 30 days
@@ -101,6 +111,8 @@ export function Dashboard() {
           getStressDistribution(undefined, startDate, endDate).catch(() => null),
           getSleepData(undefined, startDate, endDate).catch(() => []),
           getDailyData(undefined, startDate, endDate).catch(() => []),
+          getTrainingBalance(12).catch(() => []), // Last 12 weeks
+          getSleepTrend(30).catch(() => []), // Last 30 days for HRV
         ]);
         
         setSummary(summaryData);
@@ -110,6 +122,8 @@ export function Dashboard() {
         setActivityBreakdown(activityBreakdownData);
         setStressDistribution(stressDistributionData);
         setSleepData(sleepDataArray);
+        setTrainingBalance(trainingBalanceData || []);
+        setSleepTrend(sleepTrendData || []);
         
         // Get the latest daily from the filtered data (already sorted by date desc from API)
         if (dailyDataArray.length > 0) {
@@ -260,60 +274,156 @@ export function Dashboard() {
         <StrengthSummary loading={loading} />
       </div>
 
-      {/* Sleep Trend Chart */}
+      {/* Strength-Cardio Balance */}
       <Card>
         <CardHeader>
-          <CardTitle>Sleep Trend</CardTitle>
+          <CardTitle>Strength-Cardio Balance</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="h-64">
-            {recovery?.trend && recovery.trend.length > 0 ? (
+            {trainingBalance.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart
-                  data={recovery.trend}
+                <BarChart
+                  data={trainingBalance.map(week => ({
+                    week: new Date(week.week_start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                    strength_minutes: week.strength_minutes,
+                    zone2_minutes: week.zone2_minutes,
+                    vo2_minutes: week.vo2_minutes,
+                  }))}
                   margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
-                  <XAxis
-                    dataKey="date"
-                    stroke="#6b7280"
-                    fontSize={12}
-                    tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                  />
-                  <YAxis stroke="#6b7280" fontSize={12} domain={[0, 100]} />
+                  <XAxis dataKey="week" stroke="#6b7280" fontSize={11} />
+                  <YAxis stroke="#6b7280" fontSize={12} />
                   <Tooltip
                     contentStyle={{
                       backgroundColor: '#12121a',
                       border: '1px solid #1e1e2e',
                       borderRadius: '8px',
                     }}
+                    formatter={(value: number, name: string) => {
+                      const labels: Record<string, string> = {
+                        strength_minutes: 'Strength',
+                        zone2_minutes: 'Zone 2',
+                        vo2_minutes: 'VO2',
+                      };
+                      return [`${Math.round(value)} min`, labels[name] || name];
+                    }}
                   />
-                  <Line
-                    type="monotone"
-                    dataKey="sleep_score"
-                    stroke="#0ea5e9"
-                    strokeWidth={2}
-                    dot={{ fill: '#0ea5e9', r: 4 }}
-                    name="Sleep Score"
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="body_battery_high"
-                    stroke="#10b981"
-                    strokeWidth={2}
-                    dot={{ fill: '#10b981', r: 4 }}
-                    name="Body Battery"
-                  />
-                </LineChart>
+                  <Legend />
+                  <Bar dataKey="strength_minutes" name="Strength" fill="#f97316" stackId="a" />
+                  <Bar dataKey="zone2_minutes" name="Zone 2" fill="#22c55e" stackId="b" />
+                  <Bar dataKey="vo2_minutes" name="VO2" fill="#ef4444" stackId="b" />
+                </BarChart>
               </ResponsiveContainer>
             ) : (
               <div className="flex items-center justify-center h-full text-gray-500">
-                <p>No trend data available. Sync your data to see charts.</p>
+                <p>No training data available. Sync your data to see charts.</p>
               </div>
             )}
           </div>
         </CardContent>
       </Card>
+
+      {/* Sleep Score & HRV Trends */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Sleep Score Trend</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-48">
+              {sleepTrend.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart
+                    data={sleepTrend}
+                    margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
+                    <XAxis
+                      dataKey="date"
+                      stroke="#6b7280"
+                      fontSize={11}
+                      tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    />
+                    <YAxis stroke="#6b7280" fontSize={12} domain={[0, 100]} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#12121a',
+                        border: '1px solid #1e1e2e',
+                        borderRadius: '8px',
+                      }}
+                      formatter={(value: number) => [`${value}`, 'Sleep Score']}
+                      labelFormatter={(label) => new Date(label).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="sleep_score"
+                      stroke="#8b5cf6"
+                      strokeWidth={2}
+                      dot={{ fill: '#8b5cf6', r: 3 }}
+                      name="Sleep Score"
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-gray-500">
+                  <p>No sleep data available.</p>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>HRV Trend</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-48">
+              {sleepTrend.some(d => d.hrv_average) ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart
+                    data={sleepTrend.filter(d => d.hrv_average)}
+                    margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
+                    <XAxis
+                      dataKey="date"
+                      stroke="#6b7280"
+                      fontSize={11}
+                      tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    />
+                    <YAxis stroke="#6b7280" fontSize={12} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#12121a',
+                        border: '1px solid #1e1e2e',
+                        borderRadius: '8px',
+                      }}
+                      formatter={(value: number) => [`${Math.round(value)}ms`, 'HRV']}
+                      labelFormatter={(label) => new Date(label).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="hrv_average"
+                      stroke="#22c55e"
+                      strokeWidth={2}
+                      dot={{ fill: '#22c55e', r: 3 }}
+                      name="HRV"
+                      connectNulls
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-gray-500">
+                  <p>No HRV data available.</p>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

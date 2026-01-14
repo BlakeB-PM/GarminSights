@@ -9,12 +9,14 @@ import {
   Table2,
   ChevronLeft,
   ChevronRight,
+  Bike,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/strength', icon: Dumbbell, label: 'Strength Lab' },
+  { to: '/cycling', icon: Bike, label: 'Cycling' },
   { to: '/data', icon: Table2, label: 'Data Viewer' },
   { to: '/activities', icon: Activity, label: 'Activities' },
   { to: '/coach', icon: MessageCircle, label: 'AI Coach' },

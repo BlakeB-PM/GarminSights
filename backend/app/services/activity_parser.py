@@ -11,6 +11,8 @@ def parse_activity_data(raw_json: Optional[str]) -> Dict[str, Any]:
     """
     Parse activity raw_json and extract all available metrics.
     
+    Handles both summaryDTO format (running, strength) and top-level format (virtual cycling).
+    
     Args:
         raw_json: JSON string containing activity data from Garmin
         
@@ -28,7 +30,7 @@ def parse_activity_data(raw_json: Optional[str]) -> Dict[str, Any]:
     
     parsed = {}
     
-    # Extract basic metrics (from basic activity fetch)
+    # Extract basic metrics (from basic activity fetch - top level)
     parsed['elevation_gain'] = data.get('elevationGain')
     parsed['elevation_loss'] = data.get('elevationLoss')
     parsed['average_speed'] = data.get('averageSpeed')  # m/s
@@ -43,23 +45,23 @@ def parse_activity_data(raw_json: Optional[str]) -> Dict[str, Any]:
     summary = data.get('summaryDTO', {})
     if summary:
         if summary.get('averageHR') is not None:
-            hr_metrics['avg'] = summary.get('averageHR')
+            hr_metrics['avg'] = int(summary.get('averageHR'))
         if summary.get('maxHR') is not None:
-            hr_metrics['max'] = summary.get('maxHR')
+            hr_metrics['max'] = int(summary.get('maxHR'))
         if summary.get('minHR') is not None:
-            hr_metrics['min'] = summary.get('minHR')
+            hr_metrics['min'] = int(summary.get('minHR'))
         if summary.get('restingHeartRate') is not None:
-            hr_metrics['resting'] = summary.get('restingHeartRate')
+            hr_metrics['resting'] = int(summary.get('restingHeartRate'))
     
-    # Fallback: Check top-level fields (some activities store HR here)
+    # Fallback: Check top-level fields (virtual cycling and some activities store HR here)
     if not hr_metrics.get('avg') and data.get('averageHR') is not None:
-        hr_metrics['avg'] = data.get('averageHR')
+        hr_metrics['avg'] = int(data.get('averageHR'))
     if not hr_metrics.get('max') and data.get('maxHR') is not None:
-        hr_metrics['max'] = data.get('maxHR')
+        hr_metrics['max'] = int(data.get('maxHR'))
     if not hr_metrics.get('min') and data.get('minHR') is not None:
-        hr_metrics['min'] = data.get('minHR')
+        hr_metrics['min'] = int(data.get('minHR'))
     if not hr_metrics.get('resting') and data.get('restingHeartRate') is not None:
-        hr_metrics['resting'] = data.get('restingHeartRate')
+        hr_metrics['resting'] = int(data.get('restingHeartRate'))
     
     if hr_metrics:
         parsed['heart_rate'] = hr_metrics
@@ -83,11 +85,11 @@ def parse_activity_data(raw_json: Optional[str]) -> Dict[str, Any]:
         if training_metrics:
             parsed['training'] = training_metrics
         
-        # Performance metrics
+        # Performance metrics from summaryDTO
         if summary.get('averageRunningCadenceInStepsPerMinute') is not None:
-            parsed['cadence'] = summary.get('averageRunningCadenceInStepsPerMinute')
+            parsed['cadence'] = int(summary.get('averageRunningCadenceInStepsPerMinute'))
         elif summary.get('averageBikeCadenceInRevPerMinute') is not None:
-            parsed['cadence'] = summary.get('averageBikeCadenceInRevPerMinute')
+            parsed['cadence'] = int(summary.get('averageBikeCadenceInRevPerMinute'))
         
         if summary.get('strideLength') is not None:
             parsed['stride_length'] = summary.get('strideLength')  # meters
@@ -108,6 +110,73 @@ def parse_activity_data(raw_json: Optional[str]) -> Dict[str, Any]:
             parsed['average_speed'] = summary.get('averageSpeed')  # m/s
         if summary.get('maxSpeed') is not None:
             parsed['max_speed'] = summary.get('maxSpeed')  # m/s
+    
+    # ============================================
+    # Top-level metrics (virtual cycling, indoor cycling)
+    # These override summaryDTO values if present
+    # ============================================
+    
+    # Cadence - check top-level for cycling activities
+    if data.get('averageBikingCadenceInRevPerMinute') is not None:
+        parsed['cadence'] = int(data.get('averageBikingCadenceInRevPerMinute'))
+    if data.get('maxBikingCadenceInRevPerMinute') is not None:
+        parsed['max_cadence'] = int(data.get('maxBikingCadenceInRevPerMinute'))
+    
+    # Power metrics - top level (virtual cycling stores these here)
+    if data.get('avgPower') is not None:
+        parsed['average_power'] = data.get('avgPower')
+    if data.get('maxPower') is not None:
+        parsed['max_power'] = data.get('maxPower')
+    if data.get('normPower') is not None:
+        parsed['normalized_power'] = data.get('normPower')
+    
+    # Max 20-min power (useful for FTP estimation)
+    if data.get('max20MinPower') is not None:
+        parsed['max_20min_power'] = data.get('max20MinPower')
+    
+    # Intensity minutes from top level
+    if data.get('moderateIntensityMinutes') is not None:
+        parsed['intensity_minutes_moderate'] = data.get('moderateIntensityMinutes')
+    if data.get('vigorousIntensityMinutes') is not None:
+        parsed['intensity_minutes_vigorous'] = data.get('vigorousIntensityMinutes')
+    
+    # ============================================
+    # HR Time in Zones (virtual cycling)
+    # ============================================
+    hr_zones = {}
+    for zone_num in range(1, 6):
+        zone_key = f'hrTimeInZone_{zone_num}'
+        if data.get(zone_key) is not None:
+            hr_zones[f'zone_{zone_num}'] = int(data.get(zone_key))  # seconds
+    
+    if hr_zones:
+        parsed['hr_zones'] = hr_zones
+    
+    # ============================================
+    # Power Time in Zones (virtual cycling)
+    # ============================================
+    power_zones = {}
+    for zone_num in range(1, 8):
+        zone_key = f'powerTimeInZone_{zone_num}'
+        if data.get(zone_key) is not None:
+            power_zones[f'zone_{zone_num}'] = int(data.get(zone_key))  # seconds
+    
+    if power_zones:
+        parsed['power_zones'] = power_zones
+    
+    # ============================================
+    # Max Average Power Intervals (virtual cycling)
+    # These show best power over different time intervals
+    # ============================================
+    power_curve = {}
+    interval_keys = [1, 2, 5, 10, 20, 30, 60, 120, 300, 600, 1200, 1800]
+    for interval in interval_keys:
+        key = f'maxAvgPower_{interval}'
+        if data.get(key) is not None:
+            power_curve[str(interval)] = int(data.get(key))  # watts
+    
+    if power_curve:
+        parsed['power_curve'] = power_curve
     
     # Extract splits/splits summaries
     splits_data = data.get('splitSummaries', [])

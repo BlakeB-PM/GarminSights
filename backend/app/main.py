@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import init_db
-from app.routers import auth, sync, activities, wellness, strength, chat
+from app.routers import auth, sync, activities, wellness, strength, chat, cycling
 
 # Configure logging
 logging.basicConfig(
@@ -55,6 +55,7 @@ app.include_router(activities.router)
 app.include_router(wellness.router)
 app.include_router(strength.router)
 app.include_router(chat.router)
+app.include_router(cycling.router)
 
 
 @app.get("/")
