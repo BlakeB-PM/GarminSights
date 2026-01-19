@@ -39,10 +39,7 @@ import {
   Pie,
   Cell,
   ComposedChart,
-  Area,
-  ScatterChart,
   Scatter,
-  ZAxis,
 } from 'recharts';
 
 // Power zone colors
@@ -55,6 +52,25 @@ const ZONE_COLORS = {
   zone_6: '#a855f7', // Purple - Anaerobic
   zone_7: '#ec4899', // Pink - Neuromuscular
 };
+
+// Helper to format date strings without timezone issues
+// Parses "YYYY-MM-DD" directly without creating a Date object that shifts timezones
+function formatDateLabel(dateStr: string): string {
+  if (!dateStr) return '';
+  const [year, month, day] = dateStr.split('-');
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${months[parseInt(month, 10) - 1]} ${parseInt(day, 10)}`;
+}
+
+function formatDateFull(dateStr: string): string {
+  if (!dateStr) return '';
+  const [year, month, day] = dateStr.split('-');
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  // Create date at noon to avoid timezone issues
+  const date = new Date(`${dateStr}T12:00:00`);
+  return `${days[date.getDay()]}, ${months[parseInt(month, 10) - 1]} ${parseInt(day, 10)}`;
+}
 
 export function CyclingAnalytics() {
   // State for data
@@ -347,7 +363,7 @@ export function CyclingAnalytics() {
                 <XAxis 
                   dataKey="date" 
                   stroke="#9ca3af"
-                  tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  tickFormatter={formatDateLabel}
                 />
                 <YAxis yAxisId="power" stroke="#9ca3af" label={{ value: 'Watts', angle: -90, position: 'insideLeft', fill: '#9ca3af' }} />
                 <YAxis yAxisId="ef" orientation="right" stroke="#9ca3af" label={{ value: 'EF', angle: 90, position: 'insideRight', fill: '#9ca3af' }} domain={[0, 'auto']} />
@@ -358,7 +374,7 @@ export function CyclingAnalytics() {
                     if (name === 'EF') return [value?.toFixed(2), 'EF'];
                     return [value ? `${Math.round(value)}W` : '—', name];
                   }}
-                  labelFormatter={(label) => new Date(label).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                  labelFormatter={formatDateFull}
                 />
                 <Legend />
                 <Line 
@@ -423,14 +439,14 @@ export function CyclingAnalytics() {
                 <XAxis 
                   dataKey="date" 
                   stroke="#9ca3af"
-                  tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  tickFormatter={formatDateLabel}
                 />
                 <YAxis stroke="#9ca3af" domain={[60, 'auto']} label={{ value: 'RPM', angle: -90, position: 'insideLeft', fill: '#9ca3af' }} />
                 <Tooltip
                   contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
                   labelStyle={{ color: '#f3f4f6' }}
                   formatter={(value: number) => [`${Math.round(value)} RPM`, 'Cadence']}
-                  labelFormatter={(label) => new Date(label).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                  labelFormatter={formatDateFull}
                 />
                 <Bar 
                   dataKey="cadence" 
@@ -765,16 +781,16 @@ export function CyclingAnalytics() {
         </Card>
       </div>
 
-      {/* Section 7: Power vs Cadence Scatter Plot */}
+      {/* Section 7: Power vs Cadence Box Plot */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle className="flex items-center gap-2">
               <Target className="w-5 h-5" />
-              Power vs Cadence
+              Power by Cadence Range
             </CardTitle>
             <CardDescription>
-              Find your optimal cadence for power production
+              Power distribution across cadence ranges (box plot: min, Q1, median, Q3, max)
               {powerCadenceScatter?.total_rides && (
                 <span className="ml-2 text-gray-500">
                   ({powerCadenceScatter.total_rides} rides)
@@ -789,110 +805,178 @@ export function CyclingAnalytics() {
           />
         </CardHeader>
         <CardContent>
-          {powerCadenceScatter?.data && powerCadenceScatter.data.length > 0 ? (
-            <ResponsiveContainer width="100%" height={400}>
-              <ScatterChart margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                <XAxis 
-                  type="number" 
-                  dataKey="cadence" 
-                  name="Cadence" 
-                  unit=" RPM"
-                  stroke="#9ca3af"
-                  domain={['auto', 'auto']}
-                  label={{ value: 'Cadence (RPM)', position: 'bottom', fill: '#9ca3af', offset: 0 }}
-                />
-                <YAxis 
-                  type="number" 
-                  dataKey="avg_power" 
-                  name="Power" 
-                  unit="W"
-                  stroke="#9ca3af"
-                  label={{ value: 'Avg Power (W)', angle: -90, position: 'insideLeft', fill: '#9ca3af' }}
-                />
-                <ZAxis 
-                  type="number" 
-                  dataKey="duration_minutes" 
-                  range={[50, 400]} 
-                  name="Duration"
-                />
-                <Tooltip
-                  cursor={{ strokeDasharray: '3 3' }}
-                  contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
-                  labelStyle={{ color: '#f3f4f6' }}
-                  formatter={(value: number, name: string) => {
-                    if (name === 'Cadence') return [`${value} RPM`, name];
-                    if (name === 'Power') return [`${value}W`, name];
-                    if (name === 'Duration') return [`${Math.round(value)} min`, name];
-                    if (name === 'EF') return [value?.toFixed(2), 'Efficiency'];
-                    return [value, name];
-                  }}
-                  content={({ active, payload }) => {
-                    if (active && payload && payload.length) {
-                      const data = payload[0].payload;
-                      return (
-                        <div className="bg-gray-800 border border-gray-700 rounded-lg p-3 shadow-lg">
-                          <p className="text-gray-200 font-medium">{data.name || 'Ride'}</p>
-                          <p className="text-gray-400 text-sm">{data.date}</p>
-                          <div className="mt-2 space-y-1 text-sm">
-                            <p><span className="text-gray-400">Power:</span> <span className="text-green-400">{data.avg_power}W</span></p>
-                            <p><span className="text-gray-400">Cadence:</span> <span className="text-blue-400">{data.cadence} RPM</span></p>
-                            <p><span className="text-gray-400">Duration:</span> <span className="text-gray-300">{Math.round(data.duration_minutes)} min</span></p>
-                            {data.efficiency_factor && (
-                              <p><span className="text-gray-400">EF:</span> <span className="text-purple-400">{data.efficiency_factor.toFixed(2)}</span></p>
+          {(() => {
+            // Compute box plot data from scatter points
+            if (!powerCadenceScatter?.data || powerCadenceScatter.data.length === 0) {
+              return (
+                <div className="flex items-center justify-center h-64 text-gray-400">
+                  No power/cadence data available
+                </div>
+              );
+            }
+
+            // Define cadence buckets
+            const buckets = [
+              { label: '60-70', min: 60, max: 70 },
+              { label: '70-80', min: 70, max: 80 },
+              { label: '80-90', min: 80, max: 90 },
+              { label: '90-100', min: 90, max: 100 },
+              { label: '100-110', min: 100, max: 110 },
+              { label: '110+', min: 110, max: 999 },
+            ];
+
+            // Group data by cadence bucket
+            const boxPlotData = buckets.map(bucket => {
+              const points = powerCadenceScatter.data
+                .filter(p => p.cadence >= bucket.min && p.cadence < bucket.max && p.avg_power)
+                .map(p => p.avg_power)
+                .sort((a, b) => a - b);
+
+              if (points.length === 0) {
+                return { bucket: bucket.label, min: 0, q1: 0, median: 0, q3: 0, max: 0, count: 0 };
+              }
+
+              const n = points.length;
+              const q1Idx = Math.floor(n * 0.25);
+              const medianIdx = Math.floor(n * 0.5);
+              const q3Idx = Math.floor(n * 0.75);
+
+              return {
+                bucket: bucket.label,
+                min: points[0],
+                q1: points[q1Idx],
+                median: points[medianIdx],
+                q3: points[q3Idx],
+                max: points[n - 1],
+                count: n,
+              };
+            }).filter(d => d.count > 0);
+
+            if (boxPlotData.length === 0) {
+              return (
+                <div className="flex items-center justify-center h-64 text-gray-400">
+                  Not enough data to generate box plot
+                </div>
+              );
+            }
+
+            // Find best median for highlighting
+            const bestBucket = boxPlotData.reduce((best, curr) => 
+              curr.median > best.median ? curr : best
+            , boxPlotData[0]);
+
+            return (
+              <>
+                <div className="flex items-end justify-center gap-6 h-80 px-4">
+                  {boxPlotData.map((d, idx) => {
+                    const maxPower = Math.max(...boxPlotData.map(b => b.max));
+                    const scale = (val: number) => (val / maxPower) * 260; // 260px max height
+                    const isBest = d.bucket === bestBucket.bucket;
+                    
+                    return (
+                      <div key={idx} className="flex flex-col items-center gap-2">
+                        {/* Box plot visualization */}
+                        <div className="relative flex flex-col items-center" style={{ height: 280 }}>
+                          {/* Whisker line (min to max) */}
+                          <div
+                            className="absolute w-0.5 bg-gray-500"
+                            style={{
+                              bottom: scale(d.min),
+                              height: scale(d.max - d.min),
+                            }}
+                          />
+                          
+                          {/* Min whisker cap */}
+                          <div
+                            className="absolute w-4 h-0.5 bg-gray-500"
+                            style={{ bottom: scale(d.min), transform: 'translateX(-50%)' }}
+                          />
+                          
+                          {/* Max whisker cap */}
+                          <div
+                            className="absolute w-4 h-0.5 bg-gray-500"
+                            style={{ bottom: scale(d.max), transform: 'translateX(-50%)' }}
+                          />
+                          
+                          {/* Box (Q1 to Q3) */}
+                          <div
+                            className={cn(
+                              "absolute w-12 rounded border-2",
+                              isBest ? "bg-green-600/30 border-green-500" : "bg-blue-600/30 border-blue-500"
                             )}
+                            style={{
+                              bottom: scale(d.q1),
+                              height: scale(d.q3 - d.q1),
+                            }}
+                          />
+                          
+                          {/* Median line */}
+                          <div
+                            className={cn(
+                              "absolute w-12 h-1 rounded",
+                              isBest ? "bg-green-400" : "bg-blue-400"
+                            )}
+                            style={{
+                              bottom: scale(d.median) - 2,
+                            }}
+                          />
+                          
+                          {/* Labels */}
+                          <div 
+                            className="absolute text-xs text-gray-400 whitespace-nowrap"
+                            style={{ bottom: scale(d.max) + 8 }}
+                          >
+                            {d.max}W
+                          </div>
+                          <div 
+                            className={cn(
+                              "absolute text-sm font-semibold whitespace-nowrap",
+                              isBest ? "text-green-400" : "text-blue-400"
+                            )}
+                            style={{ 
+                              bottom: scale(d.median) + 8,
+                              left: '100%',
+                              marginLeft: 8,
+                            }}
+                          >
+                            {d.median}W
+                          </div>
+                          <div 
+                            className="absolute text-xs text-gray-500 whitespace-nowrap"
+                            style={{ bottom: scale(d.min) - 18 }}
+                          >
+                            {d.min}W
                           </div>
                         </div>
-                      );
-                    }
-                    return null;
-                  }}
-                />
-                <Scatter 
-                  name="Rides" 
-                  data={powerCadenceScatter.data}
-                  fill="#22c55e"
-                >
-                  {powerCadenceScatter.data.map((entry, index) => {
-                    // Color based on efficiency factor (if available)
-                    const ef = entry.efficiency_factor;
-                    let color = '#6b7280'; // default gray
-                    if (ef) {
-                      if (ef >= 1.8) color = '#22c55e'; // green - excellent
-                      else if (ef >= 1.5) color = '#84cc16'; // lime - good
-                      else if (ef >= 1.2) color = '#eab308'; // yellow - moderate
-                      else color = '#f97316'; // orange - needs work
-                    }
-                    return <Cell key={`cell-${index}`} fill={color} fillOpacity={0.8} />;
+                        
+                        {/* Bucket label */}
+                        <div className={cn(
+                          "text-sm font-medium mt-2",
+                          isBest ? "text-green-400" : "text-gray-300"
+                        )}>
+                          {d.bucket}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          n={d.count}
+                        </div>
+                      </div>
+                    );
                   })}
-                </Scatter>
-              </ScatterChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="flex items-center justify-center h-64 text-gray-400">
-              No power/cadence data available
-            </div>
-          )}
-          {powerCadenceScatter?.data && powerCadenceScatter.data.length > 0 && (
-            <div className="mt-4 flex items-center justify-center gap-6 text-sm">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-green-500" />
-                <span className="text-gray-400">EF ≥ 1.8</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-lime-500" />
-                <span className="text-gray-400">EF 1.5-1.8</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-yellow-500" />
-                <span className="text-gray-400">EF 1.2-1.5</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-orange-500" />
-                <span className="text-gray-400">EF &lt; 1.2</span>
-              </div>
-            </div>
-          )}
+                </div>
+                
+                {/* Legend */}
+                <div className="mt-6 flex items-center justify-center gap-8 text-sm">
+                  <div className="flex items-center gap-2">
+                    <div className="w-12 h-6 rounded border-2 bg-green-600/30 border-green-500" />
+                    <span className="text-gray-400">Optimal range (highest median power)</span>
+                  </div>
+                  <div className="text-gray-500 text-xs">
+                    Box: Q1–Q3 | Line: Median | Whiskers: Min–Max
+                  </div>
+                </div>
+              </>
+            );
+          })()}
         </CardContent>
       </Card>
 
@@ -908,13 +992,14 @@ export function CyclingAnalytics() {
               How sleep quality affects your cycling power
               {sleepPerformance?.correlation_stats && (
                 <span className={cn(
-                  "ml-2",
+                  "ml-2 font-medium",
                   sleepPerformance.correlation_stats.interpretation === 'positive' ? 'text-green-400' :
                   sleepPerformance.correlation_stats.interpretation === 'negative' ? 'text-red-400' : 'text-gray-400'
                 )}>
                   r = {sleepPerformance.correlation_stats.sleep_power_correlation.toFixed(2)}
-                  {sleepPerformance.correlation_stats.interpretation === 'positive' && ' (positive correlation)'}
-                  {sleepPerformance.correlation_stats.interpretation === 'negative' && ' (negative correlation)'}
+                  {sleepPerformance.correlation_stats.interpretation === 'positive' && ' ↗ positive correlation'}
+                  {sleepPerformance.correlation_stats.interpretation === 'negative' && ' ↘ negative correlation'}
+                  {sleepPerformance.correlation_stats.interpretation === 'neutral' && ' — no clear correlation'}
                 </span>
               )}
             </CardDescription>
@@ -926,96 +1011,133 @@ export function CyclingAnalytics() {
           />
         </CardHeader>
         <CardContent>
-          {sleepPerformance?.data && sleepPerformance.data.length > 0 ? (
-            <ResponsiveContainer width="100%" height={400}>
-              <ScatterChart margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                <XAxis 
-                  type="number" 
-                  dataKey="sleep_score" 
-                  name="Sleep Score" 
-                  stroke="#9ca3af"
-                  domain={[40, 100]}
-                  label={{ value: 'Sleep Score', position: 'bottom', fill: '#9ca3af', offset: 0 }}
-                />
-                <YAxis 
-                  type="number" 
-                  dataKey="avg_power" 
-                  name="Avg Power" 
-                  unit="W"
-                  stroke="#9ca3af"
-                  label={{ value: 'Avg Power (W)', angle: -90, position: 'insideLeft', fill: '#9ca3af' }}
-                />
-                <ZAxis 
-                  type="number" 
-                  dataKey="body_battery" 
-                  range={[50, 400]} 
-                  name="Body Battery"
-                />
-                <Tooltip
-                  cursor={{ strokeDasharray: '3 3' }}
-                  content={({ active, payload }) => {
-                    if (active && payload && payload.length) {
-                      const data = payload[0].payload;
-                      return (
-                        <div className="bg-gray-800 border border-gray-700 rounded-lg p-3 shadow-lg">
-                          <p className="text-gray-200 font-medium">{data.activity_name || 'Ride'}</p>
-                          <p className="text-gray-400 text-sm">{data.activity_date}</p>
-                          <div className="mt-2 space-y-1 text-sm">
-                            <p className="text-purple-300 font-medium">Sleep Metrics:</p>
-                            <p><span className="text-gray-400">Sleep Score:</span> <span className="text-purple-400">{data.sleep_score}</span></p>
-                            {data.hrv && <p><span className="text-gray-400">HRV:</span> <span className="text-purple-400">{data.hrv.toFixed(0)} ms</span></p>}
-                            {data.sleep_hours && <p><span className="text-gray-400">Duration:</span> <span className="text-purple-400">{data.sleep_hours.toFixed(1)}h</span></p>}
-                            {data.body_battery && <p><span className="text-gray-400">Body Battery:</span> <span className="text-purple-400">{data.body_battery}</span></p>}
-                            <p className="text-green-300 font-medium mt-2">Cycling Performance:</p>
-                            <p><span className="text-gray-400">Power:</span> <span className="text-green-400">{data.avg_power}W</span></p>
-                            {data.efficiency_factor && <p><span className="text-gray-400">EF:</span> <span className="text-green-400">{data.efficiency_factor.toFixed(2)}</span></p>}
-                          </div>
-                        </div>
-                      );
-                    }
-                    return null;
-                  }}
-                />
-                <Scatter 
-                  name="Workouts" 
-                  data={sleepPerformance.data}
-                >
-                  {sleepPerformance.data.map((entry, index) => {
-                    // Color based on body battery
-                    const bb = entry.body_battery;
-                    let color = '#8b5cf6'; // default purple
-                    if (bb) {
-                      if (bb >= 80) color = '#22c55e'; // green - charged
-                      else if (bb >= 50) color = '#3b82f6'; // blue - moderate
-                      else color = '#f97316'; // orange - drained
-                    }
-                    return <Cell key={`cell-${index}`} fill={color} fillOpacity={0.8} />;
-                  })}
-                </Scatter>
-              </ScatterChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="flex items-center justify-center h-64 text-gray-400">
-              No sleep/performance data available. Sync sleep data and ride on days with sleep tracking.
-            </div>
-          )}
-          {sleepPerformance?.data && sleepPerformance.data.length > 0 && (
-            <div className="mt-4 flex items-center justify-center gap-6 text-sm">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-green-500" />
-                <span className="text-gray-400">Body Battery ≥ 80</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-blue-500" />
-                <span className="text-gray-400">Body Battery 50-80</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-orange-500" />
-                <span className="text-gray-400">Body Battery &lt; 50</span>
-              </div>
-            </div>
-          )}
+          {(() => {
+            if (!sleepPerformance?.data || sleepPerformance.data.length === 0) {
+              return (
+                <div className="flex items-center justify-center h-64 text-gray-400">
+                  No sleep/performance data available. Sync sleep data and ride on days with sleep tracking.
+                </div>
+              );
+            }
+
+            // Filter data points with valid sleep_score and avg_power
+            const validData = sleepPerformance.data.filter(
+              d => d.sleep_score != null && d.avg_power != null
+            );
+
+            if (validData.length < 2) {
+              return (
+                <div className="flex items-center justify-center h-64 text-gray-400">
+                  Need at least 2 data points to show trend
+                </div>
+              );
+            }
+
+            // Calculate linear regression for trend line
+            const n = validData.length;
+            const sumX = validData.reduce((acc, d) => acc + (d.sleep_score ?? 0), 0);
+            const sumY = validData.reduce((acc, d) => acc + (d.avg_power ?? 0), 0);
+            const sumXY = validData.reduce((acc, d) => acc + (d.sleep_score ?? 0) * (d.avg_power ?? 0), 0);
+            const sumX2 = validData.reduce((acc, d) => acc + (d.sleep_score ?? 0) ** 2, 0);
+
+            const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX ** 2);
+            const intercept = (sumY - slope * sumX) / n;
+
+            // Calculate trend line endpoints
+            const minSleep = Math.min(...validData.map(d => d.sleep_score ?? 0));
+            const maxSleep = Math.max(...validData.map(d => d.sleep_score ?? 0));
+            
+            const trendLineData = [
+              { sleep_score: minSleep, trendPower: slope * minSleep + intercept },
+              { sleep_score: maxSleep, trendPower: slope * maxSleep + intercept },
+            ];
+
+            return (
+              <>
+                <ResponsiveContainer width="100%" height={400}>
+                  <ComposedChart margin={{ top: 20, right: 30, left: 20, bottom: 40 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis 
+                      type="number" 
+                      dataKey="sleep_score" 
+                      name="Sleep Score" 
+                      stroke="#9ca3af"
+                      domain={[Math.max(40, minSleep - 5), Math.min(100, maxSleep + 5)]}
+                      label={{ value: 'Sleep Score', position: 'bottom', fill: '#9ca3af', offset: 20 }}
+                    />
+                    <YAxis 
+                      type="number" 
+                      dataKey="avg_power" 
+                      name="Avg Power" 
+                      unit="W"
+                      stroke="#9ca3af"
+                      label={{ value: 'Avg Power (W)', angle: -90, position: 'insideLeft', fill: '#9ca3af' }}
+                    />
+                    <Tooltip
+                      cursor={{ strokeDasharray: '3 3' }}
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          const data = payload[0]?.payload;
+                          if (!data || data.trendPower !== undefined) return null; // Skip trend line points
+                          return (
+                            <div className="bg-gray-800 border border-gray-700 rounded-lg p-3 shadow-lg">
+                              <p className="text-gray-200 font-medium">{data.activity_name || 'Ride'}</p>
+                              <p className="text-gray-400 text-sm">{data.activity_date}</p>
+                              <div className="mt-2 space-y-1 text-sm">
+                                <p><span className="text-gray-400">Sleep Score:</span> <span className="text-purple-400">{data.sleep_score}</span></p>
+                                <p><span className="text-gray-400">Avg Power:</span> <span className="text-green-400">{data.avg_power}W</span></p>
+                                {data.sleep_hours && <p><span className="text-gray-400">Sleep:</span> <span className="text-gray-300">{data.sleep_hours.toFixed(1)}h</span></p>}
+                              </div>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    
+                    {/* Scatter points - uniform color */}
+                    <Scatter 
+                      name="Workouts" 
+                      data={validData}
+                      fill="#8b5cf6"
+                      fillOpacity={0.7}
+                    />
+                    
+                    {/* Trend line */}
+                    <Line
+                      data={trendLineData}
+                      type="linear"
+                      dataKey="trendPower"
+                      stroke={slope > 0 ? '#22c55e' : slope < 0 ? '#ef4444' : '#6b7280'}
+                      strokeWidth={2}
+                      strokeDasharray="8 4"
+                      dot={false}
+                      legendType="none"
+                      isAnimationActive={false}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+                
+                {/* Insight text */}
+                <div className="mt-4 text-center text-sm text-gray-400">
+                  {slope > 0 ? (
+                    <span className="text-green-400">
+                      ↗ Better sleep tends to correlate with higher power output
+                      <span className="text-gray-500 ml-2">
+                        (+{(slope * 10).toFixed(1)}W per 10 pts of sleep score)
+                      </span>
+                    </span>
+                  ) : slope < 0 ? (
+                    <span className="text-red-400">
+                      ↘ Inverse relationship detected (may need more data)
+                    </span>
+                  ) : (
+                    <span>No clear relationship between sleep and power</span>
+                  )}
+                </div>
+              </>
+            );
+          })()}
         </CardContent>
       </Card>
 
