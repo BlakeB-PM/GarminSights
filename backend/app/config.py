@@ -38,9 +38,23 @@ class Settings(BaseSettings):
         # json.loads() on the value; if that fails it iterates the string
         # character-by-character, producing ['h','t','t','p','s',...].
         if isinstance(v, str):
-            return [origin.strip() for origin in v.split(",") if origin.strip()]
-        # Already a list (JSON-parsed env var or the field default).
-        return v  # type: ignore[return-value]
+            origins = [origin.strip() for origin in v.split(",") if origin.strip()]
+        else:
+            # Already a list (JSON-parsed env var or the field default).
+            origins = list(v)  # type: ignore[arg-type]
+
+        # The CORS spec forbids Access-Control-Allow-Origin: * combined with
+        # Access-Control-Allow-Credentials: true — browsers will reject the
+        # response.  Since allow_credentials=True is hardcoded in main.py,
+        # using '*' here would silently break every cross-origin API call.
+        if "*" in origins:
+            raise ValueError(
+                "CORS_ORIGINS cannot contain '*' when allow_credentials=True. "
+                "List the exact frontend origin(s) instead, e.g. "
+                "CORS_ORIGINS=https://app.example.com"
+            )
+
+        return origins
 
     class Config:
         env_file = ".env"

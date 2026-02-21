@@ -13,11 +13,12 @@
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
 /**
- * Wrapper around fetch that always includes credentials (cookies) so that
- * session tokens are forwarded on cross-origin requests when the frontend and
- * backend are hosted on different domains.  The backend sets
- * allow_credentials=True in its CORSMiddleware, so the browser will attach
- * the session cookie only when the request side also opts in.
+ * Wrapper around fetch that always includes credentials.  Currently the
+ * backend stores Garmin auth tokens server-side (Garth), so there are no
+ * cookies to forward and this flag has no practical effect.  It is set in
+ * anticipation of cookie-based auth being added in the future — the backend
+ * already has allow_credentials=True in its CORSMiddleware, so no server
+ * changes would be needed at that point.
  */
 async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
   return fetch(url, { credentials: 'include', ...init });
