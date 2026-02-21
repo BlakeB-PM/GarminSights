@@ -229,7 +229,8 @@ My question: {message}"""
                 system=SYSTEM_PROMPT,
                 messages=[
                     {"role": "user", "content": full_message}
-                ]
+                ],
+                timeout=60,
             )
             
             response_text = response.content[0].text

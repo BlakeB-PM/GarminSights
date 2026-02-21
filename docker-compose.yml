@@ -1,0 +1,25 @@
+# docker-compose.yml — local testing of the production image
+# Usage:
+#   cp .env.example .env   (then fill in values)
+#   docker compose up --build
+#
+# For Cloud Run deployment, use:
+#   gcloud run deploy garminsights --source . --region us-central1
+
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      - ENV=production
+      - PORT=8080
+      - DATABASE_PATH=/data/fitness.db
+    volumes:
+      - garmin-data:/data
+    restart: unless-stopped
+
+volumes:
+  garmin-data:

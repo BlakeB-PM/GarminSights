@@ -250,9 +250,11 @@ bugreport.txt
 # Jupyter checkpoints
 garmin/Jupyter/.ipynb_checkpoints/
 
-# Session files
+# Session files / OAuth tokens
 garth_session
 *.session
+.garth_tokens/
+**/.garth_tokens/
 
 # Temporary files
 tmp/

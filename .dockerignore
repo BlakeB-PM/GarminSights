@@ -1,0 +1,31 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+.venv
+venv
+env
+
+# Node
+frontend/node_modules
+
+# IDE
+.vscode
+.idea
+
+# Data / secrets (never ship these into the image)
+*.db
+*.sqlite
+*.sqlite3
+.env
+.env.*
+.garth_tokens/
+backend/.garth_tokens/
+
+# Docs / plans
+*.md
+PLAN.md
