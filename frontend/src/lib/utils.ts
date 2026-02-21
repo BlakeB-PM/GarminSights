@@ -7,7 +7,8 @@ export function cn(...inputs: ClassValue[]): string {
 }
 
 /** Format a large number with comma separators. */
-export function formatNumber(value: number): string {
+export function formatNumber(value: number | null | undefined): string {
+  if (value == null) return '—';
   return value.toLocaleString();
 }
 

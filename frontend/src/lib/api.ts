@@ -12,6 +12,17 @@
 
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
+/**
+ * Wrapper around fetch that always includes credentials (cookies) so that
+ * session tokens are forwarded on cross-origin requests when the frontend and
+ * backend are hosted on different domains.  The backend sets
+ * allow_credentials=True in its CORSMiddleware, so the browser will attach
+ * the session cookie only when the request side also opts in.
+ */
+async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
+  return fetch(url, { credentials: 'include', ...init });
+}
+
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const text = await response.text().catch(() => '');
@@ -31,12 +42,12 @@ export interface AuthStatus {
 }
 
 export async function checkAuthStatus(): Promise<AuthStatus> {
-  const response = await fetch(`${API_BASE}/api/auth/status`);
+  const response = await apiFetch(`${API_BASE}/api/auth/status`);
   return handleResponse<AuthStatus>(response);
 }
 
 export async function login(email?: string, password?: string): Promise<AuthStatus> {
-  const response = await fetch(`${API_BASE}/api/auth/login`, {
+  const response = await apiFetch(`${API_BASE}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: email ?? null, password: password ?? null }),
@@ -45,7 +56,7 @@ export async function login(email?: string, password?: string): Promise<AuthStat
 }
 
 export async function logout(): Promise<AuthStatus> {
-  const response = await fetch(`${API_BASE}/api/auth/logout`, { method: 'POST' });
+  const response = await apiFetch(`${API_BASE}/api/auth/logout`, { method: 'POST' });
   return handleResponse<AuthStatus>(response);
 }
 
@@ -65,7 +76,7 @@ export interface SyncStatus {
 }
 
 export async function syncData(daysBack = 30): Promise<SyncStatus> {
-  const response = await fetch(`${API_BASE}/api/sync/`, {
+  const response = await apiFetch(`${API_BASE}/api/sync/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -144,17 +155,17 @@ export async function getActivities(params: {
   if (params.activity_type) query.set('activity_type', params.activity_type);
   if (params.start_date) query.set('start_date', params.start_date);
   if (params.end_date) query.set('end_date', params.end_date);
-  const response = await fetch(`${API_BASE}/api/activities/?${query}`);
+  const response = await apiFetch(`${API_BASE}/api/activities/?${query}`);
   return handleResponse<Activity[]>(response);
 }
 
 export async function getActivityTypes(): Promise<{ types: string[] }> {
-  const response = await fetch(`${API_BASE}/api/activities/types`);
+  const response = await apiFetch(`${API_BASE}/api/activities/types`);
   return handleResponse<{ types: string[] }>(response);
 }
 
 export async function getActivityHeatmap(days = 30): Promise<ActivityHeatmapDay[]> {
-  const response = await fetch(`${API_BASE}/api/activities/heatmap?days=${days}`);
+  const response = await apiFetch(`${API_BASE}/api/activities/heatmap?days=${days}`);
   return handleResponse<ActivityHeatmapDay[]>(response);
 }
 
@@ -165,7 +176,7 @@ export async function getDashboardSummary(
   const params = new URLSearchParams();
   if (startDate) params.set('start_date', startDate);
   if (endDate) params.set('end_date', endDate);
-  const response = await fetch(`${API_BASE}/api/activities/dashboard/summary?${params}`);
+  const response = await apiFetch(`${API_BASE}/api/activities/dashboard/summary?${params}`);
   return handleResponse<DashboardSummary>(response);
 }
 
@@ -176,7 +187,7 @@ export async function getTrainingLoad(
   const params = new URLSearchParams();
   if (startDate) params.set('start_date', startDate);
   if (endDate) params.set('end_date', endDate);
-  const response = await fetch(`${API_BASE}/api/activities/training-load?${params}`);
+  const response = await apiFetch(`${API_BASE}/api/activities/training-load?${params}`);
   return handleResponse<TrainingLoad>(response);
 }
 
@@ -189,7 +200,7 @@ export async function getActivityBreakdown(
   if (days != null) params.set('days', String(days));
   if (startDate) params.set('start_date', startDate);
   if (endDate) params.set('end_date', endDate);
-  const response = await fetch(`${API_BASE}/api/activities/breakdown?${params}`);
+  const response = await apiFetch(`${API_BASE}/api/activities/breakdown?${params}`);
   return handleResponse<ActivityBreakdown>(response);
 }
 
@@ -269,7 +280,7 @@ export async function getSleepData(
   if (limit != null) params.set('limit', String(limit));
   if (startDate) params.set('start_date', startDate);
   if (endDate) params.set('end_date', endDate);
-  const response = await fetch(`${API_BASE}/api/wellness/sleep?${params}`);
+  const response = await apiFetch(`${API_BASE}/api/wellness/sleep?${params}`);
   return handleResponse<SleepData[]>(response);
 }
 
@@ -282,7 +293,7 @@ export async function getDailyData(
   if (limit != null) params.set('limit', String(limit));
   if (startDate) params.set('start_date', startDate);
   if (endDate) params.set('end_date', endDate);
-  const response = await fetch(`${API_BASE}/api/wellness/dailies?${params}`);
+  const response = await apiFetch(`${API_BASE}/api/wellness/dailies?${params}`);
   return handleResponse<DailyData[]>(response);
 }
 
@@ -296,12 +307,12 @@ export async function getDailyTrend(
   if (days != null) params.set('days', String(days));
   if (startDate) params.set('start_date', startDate);
   if (endDate) params.set('end_date', endDate);
-  const response = await fetch(`${API_BASE}/api/wellness/dailies/trend?${params}`);
+  const response = await apiFetch(`${API_BASE}/api/wellness/dailies/trend?${params}`);
   return handleResponse<Array<{ date: string; value: number }>>(response);
 }
 
 export async function getRecoveryStatus(): Promise<RecoveryStatus> {
-  const response = await fetch(`${API_BASE}/api/wellness/recovery`);
+  const response = await apiFetch(`${API_BASE}/api/wellness/recovery`);
   return handleResponse<RecoveryStatus>(response);
 }
 
@@ -314,14 +325,14 @@ export async function getStressDistribution(
   if (days != null) params.set('days', String(days));
   if (startDate) params.set('start_date', startDate);
   if (endDate) params.set('end_date', endDate);
-  const response = await fetch(`${API_BASE}/api/wellness/stress/distribution?${params}`);
+  const response = await apiFetch(`${API_BASE}/api/wellness/stress/distribution?${params}`);
   return handleResponse<StressDistribution>(response);
 }
 
 export async function getSleepTrend(
   days = 30,
 ): Promise<Array<{ date: string; sleep_score: number; hrv_average?: number | null }>> {
-  const response = await fetch(`${API_BASE}/api/wellness/sleep/trend?days=${days}`);
+  const response = await apiFetch(`${API_BASE}/api/wellness/sleep/trend?days=${days}`);
   return handleResponse<Array<{ date: string; sleep_score: number; hrv_average?: number | null }>>(response);
 }
 
@@ -411,7 +422,7 @@ export interface DrillDownResponse {
 }
 
 export async function getExercises(): Promise<{ exercises: string[] }> {
-  const response = await fetch(`${API_BASE}/api/strength/exercises`);
+  const response = await apiFetch(`${API_BASE}/api/strength/exercises`);
   return handleResponse<{ exercises: string[] }>(response);
 }
 
@@ -419,7 +430,7 @@ export async function getExerciseProgress(
   exerciseName: string,
   days = 90,
 ): Promise<ExerciseProgress[]> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_BASE}/api/strength/progress/${encodeURIComponent(exerciseName)}?days=${days}`,
   );
   return handleResponse<ExerciseProgress[]>(response);
@@ -431,24 +442,24 @@ export async function getPersonalRecords(limit = 10): Promise<Array<{
   max_weight_lifted: number;
   date_achieved: string;
 }>> {
-  const response = await fetch(`${API_BASE}/api/strength/prs?limit=${limit}`);
+  const response = await apiFetch(`${API_BASE}/api/strength/prs?limit=${limit}`);
   return handleResponse(response);
 }
 
 export async function getMuscleGroupVolume(
   days = 30,
 ): Promise<Record<string, { volume: number; sets: number; exercises: string[] }>> {
-  const response = await fetch(`${API_BASE}/api/strength/muscle-groups?days=${days}`);
+  const response = await apiFetch(`${API_BASE}/api/strength/muscle-groups?days=${days}`);
   return handleResponse(response);
 }
 
 export async function getKeyLifts(): Promise<KeyLiftCard[]> {
-  const response = await fetch(`${API_BASE}/api/strength/key-lifts`);
+  const response = await apiFetch(`${API_BASE}/api/strength/key-lifts`);
   return handleResponse<KeyLiftCard[]>(response);
 }
 
 export async function getTrainingBalance(weeks = 12): Promise<TrainingBalanceData[]> {
-  const response = await fetch(`${API_BASE}/api/strength/training-balance?weeks=${weeks}`);
+  const response = await apiFetch(`${API_BASE}/api/strength/training-balance?weeks=${weeks}`);
   return handleResponse<TrainingBalanceData[]>(response);
 }
 
@@ -456,7 +467,7 @@ export async function getTrainingFrequency(
   weeks = 12,
   sortBy = 'frequency',
 ): Promise<MuscleFrequency[]> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_BASE}/api/strength/frequency?weeks=${weeks}&sort_by=${sortBy}`,
   );
   return handleResponse<MuscleFrequency[]>(response);
@@ -468,12 +479,12 @@ export async function getVolumeTrends(
 ): Promise<VolumeTrendData[]> {
   const params = new URLSearchParams({ weeks: String(weeks) });
   if (muscleGroup) params.set('muscle_group', muscleGroup);
-  const response = await fetch(`${API_BASE}/api/strength/volume-trends?${params}`);
+  const response = await apiFetch(`${API_BASE}/api/strength/volume-trends?${params}`);
   return handleResponse<VolumeTrendData[]>(response);
 }
 
 export async function getMuscleComparison(weeks = 12): Promise<MuscleComparisonData[]> {
-  const response = await fetch(`${API_BASE}/api/strength/muscle-comparison?weeks=${weeks}`);
+  const response = await apiFetch(`${API_BASE}/api/strength/muscle-comparison?weeks=${weeks}`);
   return handleResponse<MuscleComparisonData[]>(response);
 }
 
@@ -482,7 +493,7 @@ export async function getDrillDownData(
   weekStart: string,
 ): Promise<DrillDownResponse> {
   const params = new URLSearchParams({ muscle_group: muscleGroup, week_start: weekStart });
-  const response = await fetch(`${API_BASE}/api/strength/drill-down?${params}`);
+  const response = await apiFetch(`${API_BASE}/api/strength/drill-down?${params}`);
   return handleResponse<DrillDownResponse>(response);
 }
 
@@ -552,29 +563,29 @@ export interface DistanceData {
 }
 
 export async function getCyclingSummary(days = 30): Promise<CyclingSummary> {
-  const response = await fetch(`${API_BASE}/api/cycling/summary?days=${days}`);
+  const response = await apiFetch(`${API_BASE}/api/cycling/summary?days=${days}`);
   return handleResponse<CyclingSummary>(response);
 }
 
 export async function getCyclingTrends(days = 90): Promise<CyclingTrend[]> {
-  const response = await fetch(`${API_BASE}/api/cycling/trends?days=${days}`);
+  const response = await apiFetch(`${API_BASE}/api/cycling/trends?days=${days}`);
   return handleResponse<CyclingTrend[]>(response);
 }
 
 export async function getPowerCurve(days = 30, comparisonWeeks = 4): Promise<PowerCurveData> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_BASE}/api/cycling/power-curve?days=${days}&comparison_weeks=${comparisonWeeks}`,
   );
   return handleResponse<PowerCurveData>(response);
 }
 
 export async function getPowerZones(days = 30): Promise<PowerZonesData> {
-  const response = await fetch(`${API_BASE}/api/cycling/power-zones?days=${days}`);
+  const response = await apiFetch(`${API_BASE}/api/cycling/power-zones?days=${days}`);
   return handleResponse<PowerZonesData>(response);
 }
 
 export async function getCadenceAnalysis(days = 90): Promise<CadenceAnalysisData> {
-  const response = await fetch(`${API_BASE}/api/cycling/cadence?days=${days}`);
+  const response = await apiFetch(`${API_BASE}/api/cycling/cadence?days=${days}`);
   return handleResponse<CadenceAnalysisData>(response);
 }
 
@@ -588,7 +599,7 @@ export async function getDistanceData(
     aggregation,
     cumulative: String(cumulative),
   });
-  const response = await fetch(`${API_BASE}/api/cycling/distance?${params}`);
+  const response = await apiFetch(`${API_BASE}/api/cycling/distance?${params}`);
   return handleResponse<DistanceData>(response);
 }
 
@@ -617,8 +628,8 @@ export interface PowerCadenceScatterData {
 
 export async function getPowerCadenceScatter(days?: number): Promise<PowerCadenceScatterData> {
   const params = new URLSearchParams();
-  if (days) params.set('days', String(days));
-  const response = await fetch(`${API_BASE}/api/cycling/power-cadence-scatter?${params}`);
+  if (days != null) params.set('days', String(days));
+  const response = await apiFetch(`${API_BASE}/api/cycling/power-cadence-scatter?${params}`);
   return handleResponse<PowerCadenceScatterData>(response);
 }
 
@@ -647,8 +658,8 @@ export interface PowerCurveHistoryData {
 
 export async function getPowerCurveHistory(months?: number): Promise<PowerCurveHistoryData> {
   const params = new URLSearchParams();
-  if (months) params.set('months', String(months));
-  const response = await fetch(`${API_BASE}/api/cycling/power-curve-history?${params}`);
+  if (months != null) params.set('months', String(months));
+  const response = await apiFetch(`${API_BASE}/api/cycling/power-curve-history?${params}`);
   return handleResponse<PowerCurveHistoryData>(response);
 }
 
@@ -690,8 +701,8 @@ export interface SleepPerformanceData {
 
 export async function getSleepPerformanceCorrelation(days?: number): Promise<SleepPerformanceData> {
   const params = new URLSearchParams();
-  if (days) params.set('days', String(days));
-  const response = await fetch(`${API_BASE}/api/cycling/sleep-performance?${params}`);
+  if (days != null) params.set('days', String(days));
+  const response = await apiFetch(`${API_BASE}/api/cycling/sleep-performance?${params}`);
   return handleResponse<SleepPerformanceData>(response);
 }
 
@@ -708,7 +719,7 @@ export async function sendChatMessage(
   message: string,
   contextDays = 7,
 ): Promise<ChatResponse> {
-  const response = await fetch(`${API_BASE}/api/chat`, {
+  const response = await apiFetch(`${API_BASE}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ message, context_days: contextDays }),
