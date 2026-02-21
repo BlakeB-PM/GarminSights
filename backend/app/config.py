@@ -1,7 +1,7 @@
 """Application configuration loaded from environment variables."""
 
-import os
 from pathlib import Path
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 
@@ -11,23 +11,37 @@ load_dotenv()
 
 class Settings(BaseSettings):
     """Application settings."""
-    
+
     # Garmin Connect
     garmin_email: str = ""
     garmin_password: str = ""
-    
+
     # Database
     database_path: str = "./fitness.db"
-    
+
     # Garth tokens
     garth_tokens_path: str = "./.garth_tokens"
-    
+
     # Anthropic
     anthropic_api_key: str = ""
-    
-    # CORS
+
+    # CORS - set via CORS_ORIGINS env variable as a comma-separated list of origins.
+    # e.g. CORS_ORIGINS=https://app.example.com,https://www.example.com
+    # Defaults to localhost for local development.
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
-    
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v: object) -> list[str]:
+        # pydantic-settings v2 passes the raw env-var string here before its
+        # own type coercion runs.  Without this validator, pydantic would try
+        # json.loads() on the value; if that fails it iterates the string
+        # character-by-character, producing ['h','t','t','p','s',...].
+        if isinstance(v, str):
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        # Already a list (JSON-parsed env var or the field default).
+        return v  # type: ignore[return-value]
+
     class Config:
         env_file = ".env"
         extra = "ignore"
