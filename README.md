@@ -271,6 +271,195 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 > **Note:** `CORS_ORIGINS` must list exact origins — wildcards (`*`) are not supported because the app uses credentialed requests.
 
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Browser                                                        │
+│  React + TypeScript (Vite)                                      │
+│  Pages: Dashboard, Activity Log, Strength, Cycling,            │
+│         Data Viewer, Coach, Settings                            │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │ fetch() — JSON REST API
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  FastAPI (Python 3.11)                                          │
+│  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌────────────┐  │
+│  │  routers/ │  │ services/ │  │  models/  │  │ database.py│  │
+│  │ auth      │  │ garmin    │  │ schemas   │  │ SQLite     │  │
+│  │ sync      │  │ sync      │  │ (pydantic)│  │ fitness.db │  │
+│  │ activities│  │ coach     │  └───────────┘  └────────────┘  │
+│  │ wellness  │  │ activity_ │                                  │
+│  │ strength  │  │  parser   │                                  │
+│  │ cycling   │  └─────┬─────┘                                  │
+│  │ chat      │        │                                         │
+│  └───────────┘        │                                         │
+└───────────────────────┼─────────────────────────────────────────┘
+                        │
+           ┌────────────┴─────────────┐
+           │                          │
+           ▼                          ▼
+  ┌─────────────────┐      ┌──────────────────────┐
+  │ Garmin Connect  │      │ Anthropic Claude API  │
+  │ (via garth /    │      │ (AI Coach — optional) │
+  │  garminconnect) │      └──────────────────────┘
+  └─────────────────┘
+```
+
+In production (Cloud Run), the FastAPI backend also serves the pre-built React bundle as static files — the frontend and backend run as a single container.
+
+## Data Flow
+
+### Syncing Data from Garmin Connect
+
+```
+User clicks "Sync Now"
+        │
+        ▼
+POST /api/sync/
+        │
+        ▼
+SyncService.sync_all()
+        │
+        ├── GarminService.fetch_activities()
+        │       └── garminconnect → Garmin Connect API
+        │               ▼
+        │       For each new activity:
+        │         • Save summary + raw_json → activities table
+        │         • If strength_training:
+        │             fetch_exercise_sets() → parse sets/reps/weight
+        │             → strength_sets table
+        │         • raw_json also stores power, cadence, HR for cycling
+        │
+        ├── GarminService.fetch_sleep(date) × N days
+        │       └── → sleep table
+        │
+        └── GarminService.fetch_daily_summary(date) × N days
+                └── → dailies table
+```
+
+Sync is **incremental** — records use `UNIQUE` constraints (`garmin_id` for activities, `date` for sleep/dailies) so re-syncing the same data is a safe no-op (skipped via `INSERT OR IGNORE`).
+
+`backfill-strength` re-parses `raw_json` already in the database to extract strength sets without re-fetching from Garmin. `backfill-wellness` fetches historical sleep and daily data for a longer date range.
+
+### Activity Parsing
+
+The `activity_parser.py` service extracts structured metrics from the `raw_json` blob stored with each activity:
+
+- **Cycling activities** — average power, normalized power, max power, cadence, heart rate, training stress score (TSS)
+- **Strength activities** — exercise name, set number, reps, weight per set (also stored in `strength_sets` at sync time)
+
+This means cycling analytics work entirely from locally stored data — no additional Garmin API calls are needed after the initial sync.
+
+### AI Coach Request Flow
+
+```
+User sends message in Coach page
+        │
+        ▼
+POST /api/chat  { message, context_days=7 }
+        │
+        ▼
+CoachService.build_fitness_context(days=7)
+        │  Queries local SQLite for:
+        │  • Activity counts & minutes by type
+        │  • Sleep score, duration, HRV, resting HR averages
+        │  • Steps, Body Battery, stress averages
+        │  • Top 10 strength exercises by estimated 1RM
+        │  • Last 5 recent workouts
+        │
+        ▼
+Anthropic Claude API (claude-sonnet-4-20250514)
+  system: fitness coach persona
+  user:   [fitness context summary] + user's question
+        │
+        ▼
+Response streamed back to browser
+```
+
+The context window is limited to the last 7 days by default (configurable via `context_days`). Each chat turn is stateless — conversation history is not retained between requests.
+
+## Database Schema
+
+SQLite database stored at `backend/fitness.db` (configurable via `DATABASE_PATH`).
+
+### `activities`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | INTEGER PK | Internal row ID |
+| `garmin_id` | TEXT UNIQUE | Garmin activity ID (deduplication key) |
+| `activity_type` | TEXT | e.g. `strength_training`, `cycling`, `running` |
+| `name` | TEXT | Activity name from Garmin |
+| `start_time` | DATETIME | Activity start (UTC) |
+| `duration_seconds` | INTEGER | Total duration |
+| `distance_meters` | REAL | Distance (null for strength) |
+| `calories` | INTEGER | Calories burned |
+| `raw_json` | TEXT | Full Garmin JSON response (used for cycling metrics & backfill) |
+
+### `sleep`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | INTEGER PK | Internal row ID |
+| `date` | DATE UNIQUE | Calendar date |
+| `sleep_score` | INTEGER | Garmin sleep score (0–100) |
+| `total_sleep_seconds` | INTEGER | Total sleep time |
+| `deep_sleep_seconds` | INTEGER | Deep sleep duration |
+| `light_sleep_seconds` | INTEGER | Light sleep duration |
+| `rem_sleep_seconds` | INTEGER | REM sleep duration |
+| `awake_seconds` | INTEGER | Awake time during sleep window |
+| `hrv_average` | REAL | Average overnight HRV (ms) |
+| `resting_hr` | INTEGER | Resting heart rate |
+| `raw_json` | TEXT | Full Garmin sleep JSON |
+
+### `dailies`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | INTEGER PK | Internal row ID |
+| `date` | DATE UNIQUE | Calendar date |
+| `steps` | INTEGER | Total steps |
+| `distance_meters` | REAL | Total walking/running distance |
+| `active_calories` | INTEGER | Active calorie burn |
+| `calories_total` | INTEGER | Total calories (active + BMR) |
+| `calories_bmr` | INTEGER | Basal metabolic rate calories |
+| `body_battery_high` | INTEGER | Peak Body Battery (0–100) |
+| `body_battery_low` | INTEGER | Lowest Body Battery |
+| `body_battery_charged` | INTEGER | Battery gained overnight |
+| `body_battery_drained` | INTEGER | Battery used during day |
+| `stress_average` | INTEGER | Average stress level (0–100) |
+| `stress_high` | INTEGER | Peak stress |
+| `low/medium/high_stress_duration` | INTEGER | Minutes in each stress tier |
+| `intensity_minutes_moderate` | INTEGER | Moderate intensity minutes |
+| `intensity_minutes_vigorous` | INTEGER | Vigorous intensity minutes |
+| `avg/max/min/resting_heart_rate` | INTEGER | Heart rate metrics |
+| `raw_json` | TEXT | Full Garmin daily JSON |
+
+### `strength_sets`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | INTEGER PK | Internal row ID |
+| `activity_id` | INTEGER FK → `activities.id` | Parent activity |
+| `exercise_name` | TEXT | Garmin exercise name (e.g. `BARBELL_BENCH_PRESS`) |
+| `set_number` | INTEGER | Set order within the workout |
+| `reps` | INTEGER | Repetitions |
+| `weight_lbs` | REAL | Load in pounds |
+| `duration_seconds` | INTEGER | Set duration |
+| `raw_json` | TEXT | Raw set JSON from Garmin |
+
+## Authentication & Session Management
+
+GarminSights uses the `garth` library (via `garminconnect`) for Garmin authentication.
+
+1. **Login** — credentials (email + password) are sent to the Garmin Connect SSO endpoint. On success, `garth` stores OAuth tokens to disk at `GARTH_TOKENS_PATH` (default `backend/.garth_tokens/`). The raw password is **never stored**.
+2. **Session persistence** — subsequent requests load the saved tokens from disk, so credentials only need to be entered once. A lightweight API call (`get_full_name`) verifies the session is still valid on each startup.
+3. **Token refresh** — `garth` handles OAuth token refresh automatically.
+4. **Logout** — deletes all token files from `GARTH_TOKENS_PATH` and clears the in-memory session.
+
+> **Privacy:** All fitness data is stored in a local SQLite file. No data is sent to any third-party service except Garmin Connect (to fetch your own data) and Anthropic (only when using the AI Coach, and only aggregated summaries — not raw records).
+
 ## License
 
 MIT
