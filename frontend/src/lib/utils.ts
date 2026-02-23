@@ -211,12 +211,13 @@ export function getScoreBgColor(score: number | null | undefined): string {
 export function calculateLoadRatioStatus(ratio: number | null | undefined): {
   label: string;
   color: string;
+  status: 'no_data' | 'under_training' | 'optimal' | 'caution' | 'danger';
 } {
-  if (ratio == null) return { label: 'No Data', color: 'text-gray-400' };
-  if (ratio < 0.8) return { label: 'Under Training', color: 'text-blue-400' };
-  if (ratio <= 1.3) return { label: 'Optimal', color: 'text-green-400' };
-  if (ratio <= 1.5) return { label: 'Caution', color: 'text-yellow-400' };
-  return { label: 'High Risk', color: 'text-red-400' };
+  if (ratio == null) return { label: 'No Data', color: 'text-gray-400', status: 'no_data' };
+  if (ratio < 0.8) return { label: 'Under Training', color: 'text-blue-400', status: 'under_training' };
+  if (ratio <= 1.3) return { label: 'Optimal', color: 'text-green-400', status: 'optimal' };
+  if (ratio <= 1.5) return { label: 'Caution', color: 'text-yellow-400', status: 'caution' };
+  return { label: 'High Risk', color: 'text-red-400', status: 'danger' };
 }
 
 /**

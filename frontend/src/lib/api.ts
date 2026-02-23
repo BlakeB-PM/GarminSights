@@ -165,6 +165,11 @@ export async function getActivityTypes(): Promise<{ types: string[] }> {
   return handleResponse<{ types: string[] }>(response);
 }
 
+export async function getActivityDetails(activityId: number): Promise<Activity & Record<string, unknown>> {
+  const response = await apiFetch(`${API_BASE}/api/activities/${activityId}`);
+  return handleResponse<Activity & Record<string, unknown>>(response);
+}
+
 export async function getActivityHeatmap(days = 30): Promise<ActivityHeatmapDay[]> {
   const response = await apiFetch(`${API_BASE}/api/activities/heatmap?days=${days}`);
   return handleResponse<ActivityHeatmapDay[]>(response);

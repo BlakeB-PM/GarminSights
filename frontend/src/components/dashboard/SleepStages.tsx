@@ -56,7 +56,8 @@ export function SleepStages({ latestSleep, sleepData, loading }: SleepStagesProp
   }
 
   const percentages = calculateSleepStagePercentages(latestSleep);
-  const totalHours = percentages.total / 3600;
+  const totalSeconds = latestSleep.total_sleep_seconds ?? 0;
+  const totalHours = totalSeconds / 3600;
 
   // Prepare pie chart data
   const pieData = [
