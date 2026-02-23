@@ -151,7 +151,6 @@ GarminSights/
 │
 ├── Dockerfile                      # Multi-stage build for Cloud Run
 ├── docker-compose.yml              # Local Docker testing
-├── _legacy_v1/                     # Archived v1 code
 └── start.bat                       # One-click local launcher (Windows)
 ```
 
