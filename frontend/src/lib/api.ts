@@ -40,6 +40,8 @@ export interface AuthStatus {
   authenticated: boolean;
   username?: string | null;
   error?: string | null;
+  needs_mfa?: boolean | null;
+  mfa_token?: string | null;
 }
 
 export async function checkAuthStatus(): Promise<AuthStatus> {
@@ -47,11 +49,24 @@ export async function checkAuthStatus(): Promise<AuthStatus> {
   return handleResponse<AuthStatus>(response);
 }
 
-export async function login(email?: string, password?: string): Promise<AuthStatus> {
+export interface LoginParams {
+  email?: string;
+  password?: string;
+  mfa_code?: string;
+  mfa_token?: string;
+}
+
+export async function login(params?: LoginParams): Promise<AuthStatus> {
+  const body: Record<string, string | null> = {
+    email: params?.email ?? null,
+    password: params?.password ?? null,
+    mfa_code: params?.mfa_code ?? null,
+    mfa_token: params?.mfa_token ?? null,
+  };
   const response = await apiFetch(`${API_BASE}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: email ?? null, password: password ?? null }),
+    body: JSON.stringify(body),
   });
   return handleResponse<AuthStatus>(response);
 }

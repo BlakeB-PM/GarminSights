@@ -2,6 +2,8 @@
 
 import json
 import logging
+import time
+import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Any
@@ -11,6 +13,38 @@ from garminconnect import Garmin
 from app.config import settings, get_garth_tokens_path
 
 logger = logging.getLogger(__name__)
+
+
+def _patch_garth_mfa_title_check():
+    """Patch garth to recognize more MFA page titles. Garmin may use titles that don't contain 'MFA'."""
+    try:
+        import garth.sso as sso_mod
+
+        _original_get_title = sso_mod.get_title
+
+        def _patched_get_title(html: str) -> str:
+            title = _original_get_title(html)
+            # If title doesn't contain MFA but page has MFA form, treat as MFA page
+            title_lower = title.lower()
+            mfa_in_title = "mfa" in title_lower
+            mfa_in_page = "mfa-code" in html.lower() or "setupentermfacode" in html.lower()
+            if not mfa_in_title and mfa_in_page:
+                logger.debug("Garth MFA patch: page has MFA form, treating as MFA page (title=%s)", title[:50])
+                return "MFA"  # Make the existing "MFA" in title check pass
+            return title
+
+        sso_mod.get_title = _patched_get_title
+        logger.debug("Applied garth MFA title patch")
+    except Exception as e:
+        logger.warning("Could not patch garth MFA detection: %s", e)
+
+
+_patch_garth_mfa_title_check()
+
+# In-memory store for pending MFA sessions (mfa_token -> session data)
+# Sessions expire after 5 minutes
+MFA_SESSION_TTL_SECONDS = 300
+_mfa_sessions: dict[str, dict] = {}
 
 
 class GarminService:
@@ -90,39 +124,108 @@ class GarminService:
         
         return False
     
-    def login(self, email: Optional[str] = None, password: Optional[str] = None) -> bool:
+    def login(
+        self,
+        email: Optional[str] = None,
+        password: Optional[str] = None,
+        mfa_code: Optional[str] = None,
+        mfa_token: Optional[str] = None,
+        mfa_code_upfront: Optional[str] = None,
+    ) -> tuple[bool, Optional[str], Optional[str]]:
         """
         Login to Garmin Connect.
+        
+        Supports two-step MFA flow:
+        1. First call with email/password: returns (False, mfa_token, None) if MFA required
+        2. Second call with mfa_code/mfa_token: completes login
         
         Args:
             email: Garmin email (uses env var if not provided)
             password: Garmin password (uses env var if not provided)
+            mfa_code: MFA code from email/app (for second step)
+            mfa_token: Token from first step when MFA was required
             
         Returns:
-            True if login successful
+            Tuple of (success, mfa_token_if_needed, error_message)
         """
+        # Step 2: Complete MFA login
+        if mfa_code and mfa_token:
+            return self._complete_mfa_login(mfa_token, mfa_code)
+        
+        # Step 1: Initial login (may require MFA)
         email = email or settings.garmin_email
         password = password or settings.garmin_password
         
         if not email or not password:
             logger.error("Missing Garmin credentials")
-            return False
+            return False, None, "Missing email or password"
         
         try:
-            self._client = Garmin(email, password)
-            self._client.login()
+            # When user provides mfa_code upfront (single-step retry), use prompt_mfa
+            # Otherwise use return_on_mfa for two-step flow
+            if mfa_code_upfront and mfa_code_upfront.strip():
+                code = mfa_code_upfront.strip()
+                client = Garmin(
+                    email,
+                    password,
+                    return_on_mfa=False,
+                    prompt_mfa=lambda: code,
+                )
+            else:
+                client = Garmin(email, password, return_on_mfa=True)
+            token1, token2 = client.login(tokenstore=str(get_garth_tokens_path()))
             
-            # Get the internal display name (UUID used for API calls)
-            # This is different from get_full_name() which returns the user's name
+            # Check if MFA is required
+            if token1 == "needs_mfa":
+                client_state = token2
+                mfa_token_id = str(uuid.uuid4())
+                _mfa_sessions[mfa_token_id] = {
+                    "garmin_client": client,
+                    "client_state": client_state,
+                    "email": email,
+                    "created_at": time.time(),
+                }
+                logger.info("MFA required - returning mfa_token for user to complete")
+                return False, mfa_token_id, None
+            
+            # Login succeeded
+            self._client = client
             self._display_name = self._client.display_name
-            
             self._username = email
             self._save_session()
             logger.info(f"Logged in as {self._username} (display_name: {self._display_name})")
-            return True
+            return True, None, None
         except Exception as e:
             logger.error(f"Login failed: {e}")
-            return False
+            return False, None, str(e)
+    
+    def _complete_mfa_login(self, mfa_token: str, mfa_code: str) -> tuple[bool, Optional[str], Optional[str]]:
+        """Complete login after user provides MFA code."""
+        # Clean expired sessions first
+        now = time.time()
+        expired = [k for k, v in _mfa_sessions.items() if now - v["created_at"] > MFA_SESSION_TTL_SECONDS]
+        for k in expired:
+            del _mfa_sessions[k]
+        
+        if mfa_token not in _mfa_sessions:
+            return False, None, "MFA session expired or invalid. Please try logging in again."
+        
+        session = _mfa_sessions.pop(mfa_token)
+        client = session["garmin_client"]
+        client_state = session["client_state"]
+        email = session["email"]
+        
+        try:
+            client.resume_login(client_state, mfa_code.strip())
+            self._client = client
+            self._display_name = self._client.display_name
+            self._username = email
+            self._save_session()
+            logger.info(f"Logged in as {self._username} after MFA (display_name: {self._display_name})")
+            return True, None, None
+        except Exception as e:
+            logger.error(f"MFA login failed: {e}")
+            return False, None, f"MFA verification failed: {e}"
     
     def logout(self) -> None:
         """Clear stored session tokens."""

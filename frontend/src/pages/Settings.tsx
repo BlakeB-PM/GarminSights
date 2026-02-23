@@ -18,6 +18,9 @@ export function Settings() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  // MFA step 2: shown when login returns needs_mfa
+  const [mfaToken, setMfaToken] = useState<string | null>(null);
+  const [mfaCode, setMfaCode] = useState('');
   const [anthropicKey, setAnthropicKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
   const [selectedDays, setSelectedDays] = useState<number>(30);
@@ -41,17 +44,23 @@ export function Settings() {
   const handleLogin = async () => {
     setLoggingIn(true);
     try {
-      // Use entered credentials or fall back to env
-      // Only pass credentials if they're actually provided (not empty strings)
-      const status = await login(
-        email && email.trim() ? email.trim() : undefined, 
-        password && password.trim() ? password.trim() : undefined
-      );
+      const status = await login({
+        email: email && email.trim() ? email.trim() : undefined,
+        password: password && password.trim() ? password.trim() : undefined,
+        mfa_code: mfaCode && mfaCode.trim() ? mfaCode.trim() : undefined,
+        mfa_token: mfaToken ?? undefined,
+      });
       setAuthStatus(status);
       if (status.authenticated) {
         setShowCredentialForm(false);
-        setPassword(''); // Clear password from memory
-        setEmail(''); // Clear email too
+        setPassword('');
+        setEmail('');
+        setMfaToken(null);
+        setMfaCode('');
+      } else if (status.needs_mfa && status.mfa_token) {
+        setMfaToken(status.mfa_token);
+        setMfaCode('');
+        setShowCredentialForm(true);  // Expand form so user can enter MFA code
       }
     } catch (error: any) {
       setAuthStatus({ 
@@ -142,7 +151,13 @@ export function Settings() {
                 ) : (
                   <Button 
                     variant="secondary" 
-                    onClick={() => setShowCredentialForm(!showCredentialForm)}
+                    onClick={() => {
+                      setShowCredentialForm(!showCredentialForm);
+                      if (showCredentialForm) {
+                        setMfaToken(null);
+                        setMfaCode('');
+                      }
+                    }}
                   >
                     {showCredentialForm ? 'Hide' : 'Enter Credentials'}
                   </Button>
@@ -157,11 +172,12 @@ export function Settings() {
                       Garmin Email
                     </label>
                     <Input
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="your@email.com"
-                    />
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="your@email.com"
+                        disabled={!!mfaToken}
+                      />
                   </div>
                   
                   <div>
@@ -186,8 +202,28 @@ export function Settings() {
                     </div>
                   </div>
                   
+                  <div>
+                    <label className="block text-sm font-medium text-gray-400 mb-1">
+                      Verification Code {mfaToken && '(required)'}
+                    </label>
+                    <Input
+                      type="text"
+                      value={mfaCode}
+                      onChange={(e) => setMfaCode(e.target.value)}
+                      placeholder="Enter code from email (if MFA enabled)"
+                      maxLength={8}
+                      autoComplete="one-time-code"
+                      className="font-mono"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      {mfaToken
+                        ? 'Enter the 6-digit code sent to your email'
+                        : 'If you have MFA enabled, enter the code and click Connect'}
+                    </p>
+                  </div>
+                  
                   <Button onClick={handleLogin} isLoading={loggingIn} className="w-full">
-                    Connect to Garmin
+                    {mfaToken ? 'Verify & Connect' : mfaCode ? 'Connect with Code' : 'Connect to Garmin'}
                   </Button>
                   
                   <p className="text-xs text-gray-500 text-center">
