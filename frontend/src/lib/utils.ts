@@ -7,7 +7,8 @@ export function cn(...inputs: ClassValue[]): string {
 }
 
 /** Format a large number with comma separators. */
-export function formatNumber(value: number): string {
+export function formatNumber(value: number | null | undefined): string {
+  if (value == null) return '—';
   return value.toLocaleString();
 }
 
@@ -40,8 +41,8 @@ export function formatDurationMinutes(minutes: number | null | undefined): strin
 }
 
 /**
- * Format meters as "X.X mi" (primary) with km in parentheses.
- * Example: 5000 → "3.1 mi (5.0 km)"
+ * Format meters as "X.X mi".
+ * Example: 5000 → "3.1 mi"
  */
 export function formatDistance(meters: number | null | undefined): string {
   if (meters == null || meters === 0) return '—';
@@ -61,8 +62,8 @@ export function formatDistanceDual(meters: number | null | undefined): string {
 }
 
 /**
- * Format a pace from m/s as "X:XX /mi" with /km in parentheses.
- * Example: 3.0 m/s → "8:57 /mi (5:33 /km)"
+ * Format a pace from m/s as "X:XX /mi / X:XX /km".
+ * Example: 3.0 m/s → "8:57 /mi / 5:33 /km"
  */
 export function formatPaceDual(metersPerSecond: number | null | undefined): string {
   if (!metersPerSecond || metersPerSecond <= 0) return '—';
@@ -77,8 +78,8 @@ export function formatPaceDual(metersPerSecond: number | null | undefined): stri
 }
 
 /**
- * Format speed in m/s as mph with km/h in parentheses.
- * Example: 3.0 m/s → "6.7 mph (10.8 km/h)"
+ * Format speed in m/s as "X.X mph / X.X km/h".
+ * Example: 3.0 m/s → "6.7 mph / 10.8 km/h"
  */
 export function formatSpeedDual(metersPerSecond: number | null | undefined): string {
   if (!metersPerSecond || metersPerSecond <= 0) return '—';
@@ -88,8 +89,8 @@ export function formatSpeedDual(metersPerSecond: number | null | undefined): str
 }
 
 /**
- * Format elevation in meters as feet with meters in parentheses.
- * Example: 100 → "328 ft (100 m)"
+ * Format elevation in meters as "X ft / X m".
+ * Example: 100 → "328 ft / 100 m"
  */
 export function formatElevationDual(meters: number | null | undefined): string {
   if (meters == null) return '—';
@@ -98,8 +99,8 @@ export function formatElevationDual(meters: number | null | undefined): string {
 }
 
 /**
- * Format stride length in meters showing both feet and meters.
- * Example: 1.5 → "4.9 ft (1.5 m)"
+ * Format stride length in meters as "X.X ft / X.XX m".
+ * Example: 1.5 → "4.9 ft / 1.50 m"
  */
 export function formatStrideLengthDual(meters: number | null | undefined): string {
   if (meters == null || meters <= 0) return '—';

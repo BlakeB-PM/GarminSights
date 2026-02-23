@@ -1,11 +1,27 @@
 """Wellness data router (sleep and daily metrics)."""
 
+from enum import Enum
 from typing import Optional
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Query
 
 from app.database import execute_query
 from app.models.schemas import Sleep, Daily
+
+
+class DailyMetric(str, Enum):
+    """Allowed column names for daily trend queries."""
+    steps = "steps"
+    body_battery_high = "body_battery_high"
+    stress_average = "stress_average"
+
+
+# Allowlist mapping enum value → safe column name
+_METRIC_COLUMNS: dict[DailyMetric, str] = {
+    DailyMetric.steps: "steps",
+    DailyMetric.body_battery_high: "body_battery_high",
+    DailyMetric.stress_average: "stress_average",
+}
 
 router = APIRouter(prefix="/api/wellness", tags=["wellness"])
 
@@ -164,20 +180,22 @@ async def get_daily_average(days: int = Query(7, ge=1, le=90)):
 
 @router.get("/dailies/trend")
 async def get_daily_trend(
-    metric: str = Query("steps", pattern="^(steps|body_battery_high|stress_average)$"),
+    metric: DailyMetric = Query(DailyMetric.steps),
     days: Optional[int] = Query(None, ge=1, le=365),
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)")
 ):
     """
     Get trend data for a specific daily metric.
-    
+
     Args:
         metric: One of 'steps', 'body_battery_high', 'stress_average'
         days: Number of days to include (alternative to date range)
         start_date: Start date (YYYY-MM-DD)
         end_date: End date (YYYY-MM-DD)
     """
+    col = _METRIC_COLUMNS[metric]
+
     if start_date and end_date:
         period_start = start_date
         period_end = end_date
@@ -185,27 +203,26 @@ async def get_daily_trend(
         period_start = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
         period_end = datetime.now().strftime("%Y-%m-%d")
     else:
-        # Default to last 30 days
         period_start = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
         period_end = datetime.now().strftime("%Y-%m-%d")
-    
+
     if start_date and end_date:
         query = f"""
-            SELECT date, {metric} as value
+            SELECT date, {col} as value
             FROM dailies
-            WHERE date >= ? AND date <= ? AND {metric} IS NOT NULL
+            WHERE date >= ? AND date <= ? AND {col} IS NOT NULL
             ORDER BY date
         """
         params = (period_start, period_end)
     else:
         query = f"""
-            SELECT date, {metric} as value
+            SELECT date, {col} as value
             FROM dailies
-            WHERE date >= ? AND {metric} IS NOT NULL
+            WHERE date >= ? AND {col} IS NOT NULL
             ORDER BY date
         """
         params = (period_start,)
-    
+
     return execute_query(query, params)
 
 

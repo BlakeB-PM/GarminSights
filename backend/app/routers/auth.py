@@ -51,7 +51,7 @@ async def login(request: LoginRequest = None):
             email = request.email if request.email else None
             password = request.password if request.password else None
         
-        logger.info(f"Login request received - email provided: {bool(email)}, password provided: {bool(password)}, request object: {request is not None}")
+        logger.info("Login request received - credentials %s", "provided" if email else "from env")
         
         # Use env credentials if request credentials not provided
         if not email:
@@ -67,7 +67,7 @@ async def login(request: LoginRequest = None):
                 error="No credentials provided. Please enter email/password or set GARMIN_EMAIL and GARMIN_PASSWORD in .env file."
             )
         
-        logger.info(f"Attempting login for email: {email}")
+        logger.info("Attempting Garmin Connect login")
         
         if garmin.login(email, password):
             return AuthStatus(
@@ -75,14 +75,14 @@ async def login(request: LoginRequest = None):
                 username=garmin.username
             )
         
-        logger.warning(f"Login failed for email: {email}")
+        logger.warning("Login failed")
         return AuthStatus(
             authenticated=False,
             error="Login failed. Check your email and password, or verify your Garmin account credentials."
         )
     except Exception as e:
-        logger.exception(f"Login error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Login error: %s", e)
+        raise HTTPException(status_code=500, detail="An internal error occurred during login.")
 
 
 @router.post("/logout", response_model=AuthStatus)

@@ -3,8 +3,6 @@
 from typing import Optional
 from datetime import datetime, timedelta, date
 from fastapi import APIRouter, Query
-import json
-
 from app.database import execute_query
 from app.models.schemas import (
     StrengthSet, ExerciseProgress, ExerciseList,
@@ -846,7 +844,6 @@ async def get_muscle_comparison(
     )
     
     # Populate weeks with actual data
-    import json
     for set_data in sets_data:
         exercise_name = set_data["exercise_name"]
         # Get ALL muscle groups (primary + secondary) for this exercise
@@ -865,16 +862,6 @@ async def get_muscle_comparison(
             if muscle_group in selected_groups:
                 weekly_data[week_key]["muscle_groups"][muscle_group] += set_data["sets_count"]
                 
-                # #region agent log
-                log_data = {"sessionId":"debug-session","runId":"run1","hypothesisId":"A,B","location":"strength.py:883","message":"Muscle comparison counting","data":{"week_key":week_key,"exercise_name":exercise_name,"muscle_group":muscle_group,"sets_count":set_data["sets_count"],"workout_date":set_data["workout_date"]},"timestamp":int(datetime.now().timestamp()*1000)}
-                try:
-                    log_path = r'c:\Users\Blake\OneDrive\Documents\AI Repo\.cursor\debug.log'
-                    with open(log_path, 'a', encoding='utf-8') as f:
-                        f.write(json.dumps(log_data)+'\n')
-                        f.flush()
-                except Exception as e:
-                    pass  # Don't log errors in muscle comparison loop to avoid spam
-                # #endregion
     
     # Convert to response models
     result = []
@@ -906,26 +893,7 @@ async def get_drill_down(
     Returns activities with their strength sets, grouped by activity.
     Supports filtering by date range, muscle group, exercise name, and activity type.
     """
-    import json
-    import os
-    import logging
     from app.services.muscle_mapping import get_all_muscle_groups
-    
-    logger = logging.getLogger(__name__)
-    
-    # #region agent log
-    log_data = {"sessionId":"debug-session","runId":"run1","hypothesisId":"A,B,C","location":"strength.py:917","message":"Drill-down entry","data":{"week_start":str(week_start) if week_start else None,"week_end":str(week_end) if week_end else None,"muscle_group":muscle_group,"exercise_name":exercise_name,"activity_type":activity_type},"timestamp":int(datetime.now().timestamp()*1000)}
-    try:
-        # Try to get workspace root from common locations
-        log_path = r'c:\Users\Blake\OneDrive\Documents\AI Repo\.cursor\debug.log'
-        os.makedirs(os.path.dirname(log_path), exist_ok=True)
-        with open(log_path, 'a', encoding='utf-8') as f:
-            f.write(json.dumps(log_data)+'\n')
-            f.flush()
-        logger.info(f"DEBUG LOG: Drill-down entry - {muscle_group}")
-    except Exception as e:
-        logger.error(f"DEBUG LOG ERROR: {e}", exc_info=True)
-    # #endregion
     
     # Determine date range
     start_date = None
@@ -951,17 +919,6 @@ async def get_drill_down(
     end_date_inclusive = end_date + timedelta(days=1)
     start_datetime_str = datetime.combine(start_date, datetime.min.time()).strftime("%Y-%m-%d %H:%M:%S")
     end_datetime_str = datetime.combine(end_date_inclusive, datetime.min.time()).strftime("%Y-%m-%d %H:%M:%S")
-    
-    # #region agent log
-    log_data = {"sessionId":"debug-session","runId":"run1","hypothesisId":"A","location":"strength.py:940","message":"Date range calculated","data":{"start_date":str(start_date),"end_date":str(end_date),"start_datetime_str":start_datetime_str,"end_datetime_str":end_datetime_str},"timestamp":int(datetime.now().timestamp()*1000)}
-    try:
-        log_path = r'c:\Users\Blake\OneDrive\Documents\AI Repo\.cursor\debug.log'
-        with open(log_path, 'a', encoding='utf-8') as f:
-            f.write(json.dumps(log_data)+'\n')
-            f.flush()
-    except Exception as e:
-        logger.error(f"DEBUG LOG ERROR: {e}", exc_info=True)
-    # #endregion
     
     query = """
         SELECT DISTINCT
@@ -998,18 +955,6 @@ async def get_drill_down(
     # Get activities
     activities_data = execute_query(query, tuple(params))
     
-    # #region agent log
-    log_data = {"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"strength.py:975","message":"Activities found","data":{"count":len(activities_data),"activity_ids":[a["activity_id"] for a in activities_data[:5]]},"timestamp":int(datetime.now().timestamp()*1000)}
-    try:
-        log_path = r'c:\Users\Blake\OneDrive\Documents\AI Repo\.cursor\debug.log'
-        with open(log_path, 'a', encoding='utf-8') as f:
-            f.write(json.dumps(log_data)+'\n')
-            f.flush()
-        logger.info(f"DEBUG LOG: Found {len(activities_data)} activities")
-    except Exception as e:
-        logger.error(f"DEBUG LOG ERROR: {e}", exc_info=True)
-    # #endregion
-    
     # Get sets for each activity
     result_activities = []
     total_sets = 0
@@ -1032,43 +977,16 @@ async def get_drill_down(
         # Get all sets for this activity
         all_sets = execute_query(sets_query, tuple(sets_params))
         
-        # #region agent log
-        log_data = {"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"strength.py:997","message":"Sets found for activity","data":{"activity_id":act["activity_id"],"total_sets":len(all_sets),"exercise_names":[s.get("exercise_name") for s in all_sets[:3] if s.get("exercise_name")]},"timestamp":int(datetime.now().timestamp()*1000)}
-        try:
-            log_path = r'c:\Users\Blake\OneDrive\Documents\AI Repo\.cursor\debug.log'
-            with open(log_path, 'a', encoding='utf-8') as f:
-                f.write(json.dumps(log_data)+'\n')
-                f.flush()
-        except Exception as e:
-            logger.error(f"DEBUG LOG ERROR: {e}", exc_info=True)
-        # #endregion
-        
         # Apply muscle_group filter to sets if provided
         if muscle_group:
             filtered_sets = []
-            muscle_match_details = []
             for s in all_sets:
                 exercise_name = s.get("exercise_name")
                 if exercise_name:
-                    # Get ALL muscle groups (primary + secondary) for this exercise
                     muscle_groups = get_all_muscle_groups(exercise_name)
-                    matches = muscle_group in muscle_groups
-                    muscle_match_details.append({"exercise":exercise_name,"muscle_groups":muscle_groups,"matches":matches})
-                    if matches:
+                    if muscle_group in muscle_groups:
                         filtered_sets.append(s)
             activity_sets = filtered_sets
-            
-            # #region agent log
-            log_data = {"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"strength.py:1010","message":"Muscle group filtering","data":{"activity_id":act["activity_id"],"muscle_group":muscle_group,"total_sets":len(all_sets),"filtered_sets":len(filtered_sets),"matches":muscle_match_details[:3]},"timestamp":int(datetime.now().timestamp()*1000)}
-            try:
-                log_path = r'c:\Users\Blake\OneDrive\Documents\AI Repo\.cursor\debug.log'
-                with open(log_path, 'a', encoding='utf-8') as f:
-                    f.write(json.dumps(log_data)+'\n')
-                    f.flush()
-                logger.info(f"DEBUG LOG: Activity {act['activity_id']} - {len(all_sets)} total sets, {len(filtered_sets)} filtered for {muscle_group}")
-            except Exception as e:
-                logger.error(f"DEBUG LOG ERROR: {e}", exc_info=True)
-            # #endregion
         else:
             activity_sets = all_sets
         
@@ -1096,18 +1014,6 @@ async def get_drill_down(
                 sets=strength_sets
             ))
             total_sets += len(strength_sets)
-    
-    # #region agent log
-    log_data = {"sessionId":"debug-session","runId":"run1","hypothesisId":"A,B,C,D","location":"strength.py:1037","message":"Drill-down result","data":{"total_activities":len(result_activities),"total_sets":total_sets,"muscle_group":muscle_group},"timestamp":int(datetime.now().timestamp()*1000)}
-    try:
-        log_path = r'c:\Users\Blake\OneDrive\Documents\AI Repo\.cursor\debug.log'
-        with open(log_path, 'a', encoding='utf-8') as f:
-            f.write(json.dumps(log_data)+'\n')
-            f.flush()
-        logger.info(f"DEBUG LOG: Drill-down result - {len(result_activities)} activities, {total_sets} sets for {muscle_group}")
-    except Exception as e:
-        logger.error(f"DEBUG LOG ERROR: {e}", exc_info=True)
-    # #endregion
     
     return DrillDownResponse(
         period_start=start_date,

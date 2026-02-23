@@ -1,7 +1,7 @@
 """Application configuration loaded from environment variables."""
 
-import os
 from pathlib import Path
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 
@@ -30,26 +30,39 @@ class Settings(BaseSettings):
     # Defaults to localhost for local development.
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
 
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v: object) -> list[str]:
+        # pydantic-settings v2 passes the raw env-var string here before its
+        # own type coercion runs.  Without this validator, pydantic would try
+        # json.loads() on the value; if that fails it iterates the string
+        # character-by-character, producing ['h','t','t','p','s',...].
+        if isinstance(v, str):
+            origins = [origin.strip() for origin in v.split(",") if origin.strip()]
+        else:
+            # Already a list (JSON-parsed env var or the field default).
+            origins = list(v)  # type: ignore[arg-type]
+
+        # The CORS spec forbids Access-Control-Allow-Origin: * combined with
+        # Access-Control-Allow-Credentials: true — browsers will reject the
+        # response.  Since allow_credentials=True is hardcoded in main.py,
+        # using '*' here would silently break every cross-origin API call.
+        if "*" in origins:
+            raise ValueError(
+                "CORS_ORIGINS cannot contain '*' when allow_credentials=True. "
+                "List the exact frontend origin(s) instead, e.g. "
+                "CORS_ORIGINS=https://app.example.com"
+            )
+
+        return origins
+
     class Config:
         env_file = ".env"
         extra = "ignore"
 
 
-def _parse_cors_origins() -> list[str]:
-    """Read CORS_ORIGINS from the environment and split by comma."""
-    raw = os.environ.get("CORS_ORIGINS", "")
-    if raw:
-        return [origin.strip() for origin in raw.split(",") if origin.strip()]
-    return []
-
-
 settings = Settings()
-
-# Merge any comma-separated CORS_ORIGINS from the environment into the list.
-_extra_origins = _parse_cors_origins()
-if _extra_origins:
-    combined = list(dict.fromkeys(settings.cors_origins + _extra_origins))
-    settings.cors_origins = combined
 
 
 def get_database_path() -> Path:
