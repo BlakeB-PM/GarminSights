@@ -2,17 +2,96 @@
 
 import json
 import logging
+import os
 import time
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Any
 
-from garminconnect import Garmin
-
+# Config must load first - it clears GARTH_* env vars after load_dotenv
 from app.config import settings, get_garth_tokens_path
 
+# Patch os.getenv BEFORE garminconnect loads so GARMINTOKENS is never used.
+# garminconnect does tokenstore = tokenstore or os.getenv("GARMINTOKENS") and
+# tries to load from that path, causing FileNotFoundError when token files don't exist.
+_original_getenv = os.getenv
+def _patched_getenv(key, default=None):
+    if key == "GARMINTOKENS":
+        return default
+    return _original_getenv(key, default)
+os.getenv = _patched_getenv
+
+from garminconnect import Garmin
+
 logger = logging.getLogger(__name__)
+
+
+def _patch_garth_load_handle_missing_files():
+    """Patch garth.Client.load to clear GARMINTOKENS on FileNotFoundError before re-raising.
+    Ensures our Garmin.login retry has a clean env when it retries with tokenstore=None.
+    """
+    try:
+        import garth.http as garth_http
+
+        _original_load = garth_http.Client.load
+
+        def _patched_load(self, dir_path: str):
+            try:
+                return _original_load(self, dir_path)
+            except FileNotFoundError as e:
+                if "oauth1_token" in str(e) or "oauth2_token" in str(e):
+                    os.environ.pop("GARMINTOKENS", None)
+                    os.environ.pop("GARTH_HOME", None)
+                raise
+
+        garth_http.Client.load = _patched_load
+        logger.info("Patched garth.Client.load to clear token env vars on FileNotFoundError")
+    except Exception as e:
+        logger.warning("Could not patch garth.Client.load: %s", e)
+
+
+def _patch_garminconnect_handle_missing_tokens():
+    """Patch Garmin.login to avoid FileNotFoundError when token files don't exist.
+    
+    garminconnect uses tokenstore = tokenstore or os.getenv("GARMINTOKENS"). If that
+    path has no oauth1_token.json, garth.load() raises. We validate the path BEFORE
+    the original runs: if it's a path and the files don't exist, we clear GARMINTOKENS
+    and pass None so credential login runs instead.
+    """
+    _original_login = Garmin.login
+
+    def _patched_login(self, tokenstore=None):
+        # Only use tokenstore when BOTH oauth files exist at that path; otherwise force credential login
+        resolved = tokenstore or _original_getenv("GARMINTOKENS")
+        use_tokenstore = None
+        if resolved and len(str(resolved)) < 512:
+            p = Path(str(resolved).strip()).expanduser().resolve()
+            if p.suffix == ".json":
+                p = p.parent
+            oauth1_exists = (p / "oauth1_token.json").exists()
+            oauth2_exists = (p / "oauth2_token.json").exists()
+            if oauth1_exists and oauth2_exists:
+                use_tokenstore = str(p)
+            else:
+                logger.info("Token path missing oauth files, forcing credential login: %s", p)
+
+        try:
+            return _original_login(self, tokenstore=use_tokenstore)
+        except FileNotFoundError as e:
+            if "oauth1_token" in str(e) or "oauth2_token" in str(e):
+                logger.info("Token files missing, retrying without tokenstore: %s", e)
+                os.environ.pop("GARMINTOKENS", None)
+                os.environ.pop("GARTH_HOME", None)
+                return _original_login(self, tokenstore=None)  # use_tokenstore already None
+            raise
+
+    Garmin.login = _patched_login
+    logger.info("Patched Garmin.login to handle missing token files")
+
+
+_patch_garth_load_handle_missing_files()
+_patch_garminconnect_handle_missing_tokens()
 
 
 def _patch_garth_mfa_title_check():
@@ -22,19 +101,28 @@ def _patch_garth_mfa_title_check():
 
         _original_get_title = sso_mod.get_title
 
+        # Substrings Garmin uses in MFA/verification page titles (don't contain "MFA")
+        MFA_TITLE_SUBSTRINGS = ("garmin authentication application", "verification", "enter verification code")
+
         def _patched_get_title(html: str) -> str:
             title = _original_get_title(html)
-            # If title doesn't contain MFA but page has MFA form, treat as MFA page
             title_lower = title.lower()
-            mfa_in_title = "mfa" in title_lower
-            mfa_in_page = "mfa-code" in html.lower() or "setupentermfacode" in html.lower()
-            if not mfa_in_title and mfa_in_page:
-                logger.debug("Garth MFA patch: page has MFA form, treating as MFA page (title=%s)", title[:50])
-                return "MFA"  # Make the existing "MFA" in title check pass
+            # If title matches known MFA page or page has MFA form, treat as MFA
+            mfa_title = any(s in title_lower for s in MFA_TITLE_SUBSTRINGS) or "mfa" in title_lower
+            mfa_in_page = (
+                "mfa-code" in html.lower()
+                or "setupentermfacode" in html.lower()
+                or "loginentermfacode" in html.lower()
+                or "verification code" in html.lower()
+            )
+            if mfa_title or mfa_in_page:
+                if "mfa" not in title_lower:
+                    logger.debug("Garth MFA patch: treating as MFA page (title=%s)", title[:60])
+                return "MFA"
             return title
 
         sso_mod.get_title = _patched_get_title
-        logger.debug("Applied garth MFA title patch")
+        logger.info("Applied garth MFA title patch (handles 'GARMIN Authentication Application' and similar)")
     except Exception as e:
         logger.warning("Could not patch garth MFA detection: %s", e)
 
@@ -92,8 +180,21 @@ class GarminService:
             self._display_name = session_data.get("display_name")
             
             # Initialize client and load garth tokens
+            tokens_path = get_garth_tokens_path()
+            oauth1_exists = (tokens_path / "oauth1_token.json").exists()
+            oauth2_exists = (tokens_path / "oauth2_token.json").exists()
+            if not (oauth1_exists and oauth2_exists):
+                logger.info("Session file exists but garth token files missing - re-login required")
+                return False
             self._client = Garmin()
-            self._client.garth.load(str(get_garth_tokens_path()))
+            try:
+                self._client.garth.load(str(tokens_path))
+            except FileNotFoundError as e:
+                if "oauth1_token" in str(e) or "oauth2_token" in str(e):
+                    logger.info("Token files missing during load, re-login required: %s", e)
+                    self._client = None
+                    return False
+                raise
             
             # Set the display name on the client for API calls that need it
             if self._display_name:
@@ -101,6 +202,9 @@ class GarminService:
             
             logger.info(f"Session loaded from disk (username: {self._username}, display_name: {self._display_name})")
             return True
+        except FileNotFoundError:
+            logger.info("Token files not found - re-login required")
+            return False
         except Exception as e:
             logger.error(f"Failed to load session: {e}")
             return False
@@ -161,19 +265,55 @@ class GarminService:
             return False, None, "Missing email or password"
         
         try:
+            # When token files don't exist, clear garth env vars so garth.Client doesn't try
+            # to auto-resume on init, and garminconnect doesn't load from GARMINTOKENS
+            tokens_path = get_garth_tokens_path()
+            if not (tokens_path / "oauth1_token.json").exists():
+                saved_home = os.environ.pop("GARTH_HOME", None)
+                saved_token = os.environ.pop("GARTH_TOKEN", None)
+                saved_garmin_tokens = os.environ.pop("GARMINTOKENS", None)
+            else:
+                saved_home = saved_token = saved_garmin_tokens = None
+
             # When user provides mfa_code upfront (single-step retry), use prompt_mfa
             # Otherwise use return_on_mfa for two-step flow
-            if mfa_code_upfront and mfa_code_upfront.strip():
-                code = mfa_code_upfront.strip()
-                client = Garmin(
-                    email,
-                    password,
-                    return_on_mfa=False,
-                    prompt_mfa=lambda: code,
-                )
-            else:
-                client = Garmin(email, password, return_on_mfa=True)
-            token1, token2 = client.login(tokenstore=str(get_garth_tokens_path()))
+            try:
+                if mfa_code_upfront and mfa_code_upfront.strip():
+                    code = mfa_code_upfront.strip()
+                    client = Garmin(
+                        email,
+                        password,
+                        return_on_mfa=False,
+                        prompt_mfa=lambda: code,
+                    )
+                else:
+                    client = Garmin(email, password, return_on_mfa=True)
+                # Only pass tokenstore when BOTH token files exist; otherwise garth.load() raises FileNotFoundError
+                oauth1 = tokens_path / "oauth1_token.json"
+                oauth2 = tokens_path / "oauth2_token.json"
+                tokenstore = str(tokens_path) if (oauth1.exists() and oauth2.exists()) else None
+                # When doing credential login, ensure GARMINTOKENS is unset so garminconnect
+                # doesn't try to load from a path that may not have token files yet
+                if tokenstore is None:
+                    os.environ.pop("GARMINTOKENS", None)
+                try:
+                    token1, token2 = client.login(tokenstore=tokenstore)
+                except FileNotFoundError as e:
+                    # Token files missing (e.g. first login) - retry without tokenstore
+                    os.environ.pop("GARMINTOKENS", None)
+                    logger.info("Token load failed (%s), retrying with credentials only", e)
+                    if mfa_code_upfront and mfa_code_upfront.strip():
+                        code = mfa_code_upfront.strip()
+                        client = Garmin(email, password, return_on_mfa=False, prompt_mfa=lambda: code)
+                    else:
+                        client = Garmin(email, password, return_on_mfa=True)
+                    token1, token2 = client.login(tokenstore=None)
+            finally:
+                if saved_home is not None:
+                    os.environ["GARTH_HOME"] = saved_home
+                if saved_token is not None:
+                    os.environ["GARTH_TOKEN"] = saved_token
+                # Do NOT restore GARMINTOKENS - we want it cleared so credential login works
             
             # Check if MFA is required
             if token1 == "needs_mfa":

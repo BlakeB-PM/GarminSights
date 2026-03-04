@@ -1,6 +1,7 @@
 """Authentication router for Garmin Connect."""
 
 import logging
+
 from fastapi import APIRouter, HTTPException
 
 from app.models.schemas import AuthStatus, LoginRequest
@@ -98,7 +99,6 @@ async def login(request: LoginRequest = None):
             )
         
         logger.info("Attempting Garmin Connect login")
-        
         success, returned_mfa_token, error = garmin.login(email, password)
         
         if success:

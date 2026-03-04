@@ -1,5 +1,6 @@
 """Application configuration loaded from environment variables."""
 
+import os
 from pathlib import Path
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
@@ -63,6 +64,12 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Clear garth token env vars AFTER Settings() - pydantic-settings may re-load .env and
+# restore GARMINTOKENS. These vars cause FileNotFoundError when token files don't exist
+# (first login). GarminSights manages tokens via garth_tokens_path instead.
+for _var in ("GARTH_HOME", "GARTH_TOKEN", "GARMINTOKENS"):
+    os.environ.pop(_var, None)
 
 
 def get_database_path() -> Path:

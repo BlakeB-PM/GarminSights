@@ -1,7 +1,7 @@
 """FastAPI application entry point for GarminSights."""
 
-import os
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
