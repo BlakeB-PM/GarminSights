@@ -215,12 +215,16 @@ class AuthStatus(BaseModel):
     authenticated: bool
     username: Optional[str] = None
     error: Optional[str] = None
+    needs_mfa: Optional[bool] = None
+    mfa_token: Optional[str] = None
 
 
 class LoginRequest(BaseModel):
     """Login request - uses env credentials by default."""
     email: Optional[str] = None
     password: Optional[str] = None
+    mfa_code: Optional[str] = None
+    mfa_token: Optional[str] = None
 
 
 # ============================================
