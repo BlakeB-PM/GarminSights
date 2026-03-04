@@ -10,7 +10,7 @@ export function Card({ children, className, hover = false }: CardProps) {
   return (
     <div
       className={cn(
-        'glass-card p-6',
+        'glass-card p-4 md:p-6',
         hover && 'hover:border-accent/30 transition-colors duration-200',
         className
       )}

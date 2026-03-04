@@ -397,7 +397,7 @@ export function StrengthAnalytics() {
   }
 
   return (
-    <div className="space-y-8 animate-fade-in">
+    <div className="space-y-4 md:space-y-8 animate-fade-in">
       <Header
         title="Strength Lab"
         subtitle="Comprehensive strength training analytics and insights"
@@ -1523,7 +1523,7 @@ export function StrengthAnalytics() {
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent" />
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                   {keyLifts.map((lift) => (
                     <div
                       key={lift.exercise_name}
@@ -1573,7 +1573,7 @@ export function StrengthAnalytics() {
           </Card>
 
           {/* Personal Records & Muscle Groups */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
         {/* Personal Records */}
         <Card>
           <CardHeader>

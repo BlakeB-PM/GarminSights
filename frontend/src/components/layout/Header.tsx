@@ -7,7 +7,7 @@ interface HeaderProps {
 
 export function Header({ title, subtitle }: HeaderProps) {
   return (
-    <header className="flex items-center justify-between mb-8">
+    <header className="flex items-center justify-between mb-4 md:mb-8">
       <div>
         <h1 className="page-title">{title}</h1>
         {subtitle && <p className="page-subtitle">{subtitle}</p>}

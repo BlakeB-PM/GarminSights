@@ -205,7 +205,7 @@ export function DataViewer() {
   };
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-4 md:space-y-6 animate-fade-in">
       <Header
         title="Data Viewer"
         subtitle="Verify your imported data day-by-day"
