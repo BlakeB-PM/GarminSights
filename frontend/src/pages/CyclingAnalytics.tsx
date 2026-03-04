@@ -24,6 +24,7 @@ import {
   type SleepPerformanceData,
 } from '../lib/api';
 import { cn } from '../lib/utils';
+import { useIsMobile } from '../hooks/useIsMobile';
 import {
   LineChart,
   Line,
@@ -72,7 +73,12 @@ function formatDateFull(dateStr: string): string {
   return `${days[date.getDay()]}, ${months[parseInt(month, 10) - 1]} ${parseInt(day, 10)}`;
 }
 
-export function CyclingAnalytics() {
+export function CyclingAnalytics({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
+  const isMobile = useIsMobile();
+  const chartMargin = isMobile
+    ? { top: 5, right: 5, left: 0, bottom: 5 }
+    : { top: 5, right: 30, left: 20, bottom: 5 };
+
   // State for data
   const [summary, setSummary] = useState<CyclingSummary | null>(null);
   const [trends, setTrends] = useState<CyclingTrend[]>([]);
@@ -235,8 +241,9 @@ export function CyclingAnalytics() {
     return (
       <div className="space-y-6">
         <Header 
-          title="Cycling Analytics" 
+          title="Cycling Analytics"
           subtitle="Power-based performance insights"
+          onMenuToggle={onMenuToggle}
         />
         <div className="flex items-center justify-center h-64">
           <div className="text-gray-400">Loading cycling data...</div>
@@ -357,8 +364,9 @@ export function CyclingAnalytics() {
         </CardHeader>
         <CardContent>
           {trends.length > 0 ? (
-            <ResponsiveContainer width="100%" height={350}>
-              <ComposedChart data={trends} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+            <div className="h-52 sm:h-64 md:h-[350px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={trends} margin={chartMargin}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                 <XAxis 
                   dataKey="date" 
@@ -410,6 +418,7 @@ export function CyclingAnalytics() {
                 />
               </ComposedChart>
             </ResponsiveContainer>
+            </div>
           ) : (
             <div className="flex items-center justify-center h-64 text-gray-400">
               No cycling data available for this period
@@ -433,8 +442,9 @@ export function CyclingAnalytics() {
         </CardHeader>
         <CardContent>
           {trends.length > 0 ? (
-            <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={trends} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+            <div className="h-44 sm:h-52 md:h-[250px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={trends} margin={chartMargin}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                 <XAxis 
                   dataKey="date" 
@@ -456,6 +466,7 @@ export function CyclingAnalytics() {
                 />
               </BarChart>
             </ResponsiveContainer>
+            </div>
           ) : (
             <div className="flex items-center justify-center h-64 text-gray-400">
               No cadence data available for this period
@@ -562,8 +573,9 @@ export function CyclingAnalytics() {
         </CardHeader>
         <CardContent>
           {distanceData && distanceData.data.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <ComposedChart data={distanceData.data} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+            <div className="h-48 sm:h-56 md:h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={distanceData.data} margin={chartMargin}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                 <XAxis 
                   dataKey="label" 
@@ -616,6 +628,7 @@ export function CyclingAnalytics() {
                 )}
               </ComposedChart>
             </ResponsiveContainer>
+            </div>
           ) : (
             <div className="flex items-center justify-center h-64 text-gray-400">
               No distance data available
@@ -639,8 +652,9 @@ export function CyclingAnalytics() {
         </CardHeader>
         <CardContent>
           {powerCurveChartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={350}>
-              <BarChart data={powerCurveChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+            <div className="h-52 sm:h-64 md:h-[350px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={powerCurveChartData} margin={chartMargin}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                 <XAxis dataKey="interval" stroke="#9ca3af" />
                 <YAxis stroke="#9ca3af" label={{ value: 'Watts', angle: -90, position: 'insideLeft', fill: '#9ca3af' }} />
@@ -656,6 +670,7 @@ export function CyclingAnalytics() {
                 )}
               </BarChart>
             </ResponsiveContainer>
+            </div>
           ) : (
             <div className="flex items-center justify-center h-64 text-gray-400">
               No power curve data available
@@ -681,8 +696,9 @@ export function CyclingAnalytics() {
           </CardHeader>
           <CardContent>
             {powerZonesChartData.length > 0 ? (
-              <div className="flex items-center gap-4">
-                <ResponsiveContainer width="50%" height={250}>
+              <div className="flex flex-col sm:flex-row items-center gap-4">
+                <div className="w-full sm:w-1/2 h-44 sm:h-[250px]">
+                <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
                       data={powerZonesChartData}
@@ -703,6 +719,7 @@ export function CyclingAnalytics() {
                     />
                   </PieChart>
                 </ResponsiveContainer>
+                </div>
                 <div className="flex-1 space-y-2">
                   {powerZonesChartData.map((zone, index) => (
                     <div key={index} className="flex items-center justify-between text-sm">
@@ -745,8 +762,9 @@ export function CyclingAnalytics() {
           </CardHeader>
           <CardContent>
             {cadenceData?.distribution && cadenceData.distribution.length > 0 ? (
-              <ResponsiveContainer width="100%" height={250}>
-                <BarChart data={cadenceData.distribution} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              <div className="h-44 sm:h-52 md:h-[250px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={cadenceData.distribution} margin={chartMargin}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                   <XAxis dataKey="bucket" stroke="#9ca3af" label={{ value: 'RPM', position: 'bottom', fill: '#9ca3af' }} />
                   <YAxis stroke="#9ca3af" label={{ value: 'Avg Power (W)', angle: -90, position: 'insideLeft', fill: '#9ca3af' }} />
@@ -772,6 +790,7 @@ export function CyclingAnalytics() {
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
+              </div>
             ) : (
               <div className="flex items-center justify-center h-64 text-gray-400">
                 No cadence data available
@@ -867,16 +886,17 @@ export function CyclingAnalytics() {
 
             return (
               <>
-                <div className="flex items-end justify-center gap-6 h-80 px-4">
+                <div className="flex items-end justify-center gap-3 sm:gap-6 h-64 sm:h-80 px-2 sm:px-4">
                   {boxPlotData.map((d, idx) => {
                     const maxPower = Math.max(...boxPlotData.map(b => b.max));
-                    const scale = (val: number) => (val / maxPower) * 260; // 260px max height
+                    const plotHeight = isMobile ? 200 : 260;
+                    const scale = (val: number) => (val / maxPower) * plotHeight;
                     const isBest = d.bucket === bestBucket.bucket;
                     
                     return (
                       <div key={idx} className="flex flex-col items-center gap-2">
                         {/* Box plot visualization */}
-                        <div className="relative flex flex-col items-center" style={{ height: 280 }}>
+                        <div className="relative flex flex-col items-center" style={{ height: isMobile ? 220 : 280 }}>
                           {/* Whisker line (min to max) */}
                           <div
                             className="absolute w-0.5 bg-gray-500"
@@ -1054,8 +1074,9 @@ export function CyclingAnalytics() {
 
             return (
               <>
-                <ResponsiveContainer width="100%" height={400}>
-                  <ComposedChart margin={{ top: 20, right: 30, left: 20, bottom: 40 }}>
+                <div className="h-56 sm:h-72 md:h-[400px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart margin={isMobile ? { top: 10, right: 5, left: 0, bottom: 20 } : { top: 20, right: 30, left: 20, bottom: 40 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                     <XAxis 
                       type="number" 
@@ -1117,7 +1138,8 @@ export function CyclingAnalytics() {
                     />
                   </ComposedChart>
                 </ResponsiveContainer>
-                
+                </div>
+
                 {/* Insight text */}
                 <div className="mt-4 text-center text-sm text-gray-400">
                   {slope > 0 ? (

@@ -6,7 +6,7 @@ import { Input } from '../components/ui/Input';
 import { CheckCircle, XCircle, RefreshCw, Database, User, Key, Eye, EyeOff } from 'lucide-react';
 import { checkAuthStatus, login, logout, syncData, type AuthStatus, type SyncStatus } from '../lib/api';
 
-export function Settings() {
+export function Settings({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -100,6 +100,7 @@ export function Settings() {
       <Header
         title="Settings"
         subtitle="Manage your Garmin connection and data sync"
+        onMenuToggle={onMenuToggle}
       />
 
       {/* Auth Status */}

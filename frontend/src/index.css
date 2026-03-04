@@ -67,7 +67,7 @@ body {
   }
 
   .chart-container {
-    @apply glass-card p-6;
+    @apply glass-card p-3 md:p-6;
   }
 
   .page-title {
@@ -92,4 +92,19 @@ body {
 
 .recharts-tooltip-wrapper {
   outline: none;
+}
+
+/* Mobile chart optimizations */
+@media (max-width: 639px) {
+  .recharts-text {
+    font-size: 9px;
+  }
+
+  .recharts-legend-item-text {
+    font-size: 11px !important;
+  }
+
+  .recharts-tooltip-wrapper {
+    font-size: 12px;
+  }
 }

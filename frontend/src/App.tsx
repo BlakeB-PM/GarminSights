@@ -24,11 +24,20 @@ const queryClient = new QueryClient({
 function AppLayout() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => window.innerWidth < 1024);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Auto-collapse sidebar on smaller screens (landscape mobile)
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 1023px)');
     const handler = (e: MediaQueryListEvent) => setIsSidebarCollapsed(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
+  // Close mobile menu when resizing to tablet/desktop
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 640px)');
+    const handler = (e: MediaQueryListEvent) => { if (e.matches) setIsMobileMenuOpen(false); };
     mq.addEventListener('change', handler);
     return () => mq.removeEventListener('change', handler);
   }, []);
@@ -46,26 +55,38 @@ function AppLayout() {
     }
   };
 
+  const menuToggleProps = { onMenuToggle: () => setIsMobileMenuOpen(true) };
+
   return (
     <div className="min-h-screen">
-      <Sidebar 
-        onSync={handleSync} 
+      <Sidebar
+        onSync={handleSync}
         isSyncing={isSyncing}
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+        isMobileOpen={isMobileMenuOpen}
+        onMobileClose={() => setIsMobileMenuOpen(false)}
       />
-      
-      {/* Main Content */}
-      <main className={`transition-all duration-300 p-3 md:p-6 ${isSidebarCollapsed ? 'ml-16' : 'ml-64'}`}>
+
+      {/* Mobile backdrop */}
+      {isMobileMenuOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-30 sm:hidden"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
+      {/* Main Content — no left margin on mobile (sidebar is overlay) */}
+      <main className={`transition-all duration-300 p-3 md:p-6 ${isSidebarCollapsed ? 'sm:ml-16' : 'sm:ml-64'}`}>
         <div className="max-w-7xl mx-auto">
           <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/data" element={<DataViewer />} />
-            <Route path="/activities" element={<ActivityLog />} />
-            <Route path="/strength" element={<StrengthAnalytics />} />
-            <Route path="/cycling" element={<CyclingAnalytics />} />
-            <Route path="/coach" element={<Coach />} />
-            <Route path="/settings" element={<Settings />} />
+            <Route path="/" element={<Dashboard {...menuToggleProps} />} />
+            <Route path="/data" element={<DataViewer {...menuToggleProps} />} />
+            <Route path="/activities" element={<ActivityLog {...menuToggleProps} />} />
+            <Route path="/strength" element={<StrengthAnalytics {...menuToggleProps} />} />
+            <Route path="/cycling" element={<CyclingAnalytics {...menuToggleProps} />} />
+            <Route path="/coach" element={<Coach {...menuToggleProps} />} />
+            <Route path="/settings" element={<Settings {...menuToggleProps} />} />
           </Routes>
         </div>
       </main>

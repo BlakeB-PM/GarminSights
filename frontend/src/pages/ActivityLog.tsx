@@ -25,7 +25,7 @@ const activityIcons: Record<string, React.ReactNode> = {
   cycling: <Bike className="w-5 h-5" />,
 };
 
-export function ActivityLog() {
+export function ActivityLog({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [activityTypes, setActivityTypes] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,6 +83,7 @@ export function ActivityLog() {
       <Header
         title="Activity Log"
         subtitle="Browse and search your workout history"
+        onMenuToggle={onMenuToggle}
       />
 
       {/* Filters */}
