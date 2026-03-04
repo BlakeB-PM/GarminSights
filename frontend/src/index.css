@@ -43,7 +43,7 @@ body {
   }
 
   .stat-card {
-    @apply glass-card p-6 hover:border-accent/30 transition-colors duration-200;
+    @apply glass-card p-3 md:p-6 hover:border-accent/30 transition-colors duration-200;
   }
 
   .btn-primary {
@@ -71,11 +71,11 @@ body {
   }
 
   .page-title {
-    @apply text-2xl font-bold text-gray-100 mb-2;
+    @apply text-xl md:text-2xl font-bold text-gray-100 mb-1 md:mb-2;
   }
 
   .page-subtitle {
-    @apply text-gray-400 mb-6;
+    @apply text-sm md:text-base text-gray-400 mb-3 md:mb-6;
   }
 }
 

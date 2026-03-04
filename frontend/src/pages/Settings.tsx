@@ -96,7 +96,7 @@ export function Settings() {
   };
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-4 md:space-y-6 animate-fade-in">
       <Header
         title="Settings"
         subtitle="Manage your Garmin connection and data sync"

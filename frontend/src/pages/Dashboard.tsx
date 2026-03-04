@@ -184,7 +184,7 @@ export function Dashboard() {
   };
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-4 md:space-y-6 animate-fade-in">
       <Header
         title="Dashboard"
         subtitle="Your fitness overview at a glance"
@@ -197,7 +197,7 @@ export function Dashboard() {
       />
 
       {/* Hero Section: Recovery Score & Training Load */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
         {recovery && (
           <RecoveryScore
             recoveryScore={recovery.recovery_score}
@@ -213,7 +213,7 @@ export function Dashboard() {
       </div>
 
       {/* Top Stats Row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 md:gap-6">
         <StatCard
           title="Sleep Score"
           value={summary?.last_sleep_score ?? '—'}
@@ -257,19 +257,19 @@ export function Dashboard() {
       </div>
 
       {/* Second Row: Activity Breakdown & Sleep Stages */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
         <ActivityBreakdown data={activityBreakdown} loading={loading} />
         <SleepStages latestSleep={sleepData[0] || null} sleepData={sleepData} loading={loading} />
       </div>
 
       {/* Third Row: Body Battery Trend & Stress Distribution */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
         <BodyBatteryTrend latestDaily={latestDaily} loading={loading} startDate={startDate} endDate={endDate} />
         <StressDistribution data={stressDistribution} loading={loading} />
       </div>
 
       {/* Fourth Row: Activity Heatmap & Strength Summary */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
         <ActivityHeatmap data={heatmap} days={30} />
         <StrengthSummary loading={loading} />
       </div>
@@ -326,7 +326,7 @@ export function Dashboard() {
       </Card>
 
       {/* Sleep Score & HRV Trends */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
         <Card>
           <CardHeader>
             <CardTitle>Sleep Score Trend</CardTitle>

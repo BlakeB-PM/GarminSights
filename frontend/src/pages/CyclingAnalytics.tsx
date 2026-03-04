@@ -246,14 +246,14 @@ export function CyclingAnalytics() {
   }
 
   return (
-    <div className="space-y-6">
-      <Header 
+    <div className="space-y-4 md:space-y-6">
+      <Header
         title="Cycling Analytics" 
         subtitle="Power-based performance insights"
       />
       
       {/* Section 1: Core KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
         {/* Estimated FTP */}
         <Card>
           <CardContent className="pt-6">
@@ -665,7 +665,7 @@ export function CyclingAnalytics() {
       </Card>
 
       {/* Section 6: Power Zones and Cadence Analysis */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
         {/* Power Zones */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">

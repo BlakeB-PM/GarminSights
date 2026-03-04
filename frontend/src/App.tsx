@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -23,7 +23,15 @@ const queryClient = new QueryClient({
 
 function AppLayout() {
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => window.innerWidth < 1024);
+
+  // Auto-collapse sidebar on smaller screens (landscape mobile)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 1023px)');
+    const handler = (e: MediaQueryListEvent) => setIsSidebarCollapsed(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
 
   const handleSync = async () => {
     setIsSyncing(true);
@@ -48,7 +56,7 @@ function AppLayout() {
       />
       
       {/* Main Content */}
-      <main className={`transition-all duration-300 p-6 ${isSidebarCollapsed ? 'ml-16' : 'ml-64'}`}>
+      <main className={`transition-all duration-300 p-3 md:p-6 ${isSidebarCollapsed ? 'ml-16' : 'ml-64'}`}>
         <div className="max-w-7xl mx-auto">
           <Routes>
             <Route path="/" element={<Dashboard />} />
