@@ -121,49 +121,6 @@ async def get_activity_heatmap(days: int = Query(30, ge=7, le=90)):
     return heatmap
 
 
-@router.get("/{activity_id}", response_model=ActivityWithSets)
-async def get_activity(activity_id: int):
-    """Get a single activity with all available metrics and strength sets if applicable."""
-    activities = execute_query(
-        "SELECT * FROM activities WHERE id = ?",
-        (activity_id,)
-    )
-    
-    if not activities:
-        return {"error": "Activity not found"}
-    
-    activity = activities[0]
-    
-    # Parse raw_json to extract all available metrics
-    raw_json = activity.get("raw_json")
-    parsed_metrics = parse_activity_data(raw_json)
-    
-    # Convert nested dictionaries to Pydantic models if present
-    heart_rate_dict = parsed_metrics.pop("heart_rate", None)
-    if heart_rate_dict and isinstance(heart_rate_dict, dict):
-        activity["heart_rate"] = HeartRateMetrics(**heart_rate_dict)
-    else:
-        activity["heart_rate"] = None
-    
-    training_dict = parsed_metrics.pop("training", None)
-    if training_dict and isinstance(training_dict, dict):
-        activity["training"] = TrainingMetrics(**training_dict)
-    else:
-        activity["training"] = None
-    
-    # Merge remaining parsed metrics into activity dict
-    activity.update(parsed_metrics)
-    
-    # Get strength sets if any
-    sets = execute_query(
-        "SELECT * FROM strength_sets WHERE activity_id = ? ORDER BY set_number",
-        (activity_id,)
-    )
-    
-    activity["strength_sets"] = sets
-    return activity
-
-
 @router.get("/dashboard/summary", response_model=DashboardSummary)
 async def get_dashboard_summary(
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD). If not provided, uses last 7 days."),
@@ -422,4 +379,47 @@ async def get_activity_breakdown(
             "calories": total_calories
         }
     }
+
+
+@router.get("/{activity_id}", response_model=ActivityWithSets)
+async def get_activity(activity_id: int):
+    """Get a single activity with all available metrics and strength sets if applicable."""
+    activities = execute_query(
+        "SELECT * FROM activities WHERE id = ?",
+        (activity_id,)
+    )
+    
+    if not activities:
+        return {"error": "Activity not found"}
+    
+    activity = activities[0]
+    
+    # Parse raw_json to extract all available metrics
+    raw_json = activity.get("raw_json")
+    parsed_metrics = parse_activity_data(raw_json)
+    
+    # Convert nested dictionaries to Pydantic models if present
+    heart_rate_dict = parsed_metrics.pop("heart_rate", None)
+    if heart_rate_dict and isinstance(heart_rate_dict, dict):
+        activity["heart_rate"] = HeartRateMetrics(**heart_rate_dict)
+    else:
+        activity["heart_rate"] = None
+    
+    training_dict = parsed_metrics.pop("training", None)
+    if training_dict and isinstance(training_dict, dict):
+        activity["training"] = TrainingMetrics(**training_dict)
+    else:
+        activity["training"] = None
+    
+    # Merge remaining parsed metrics into activity dict
+    activity.update(parsed_metrics)
+    
+    # Get strength sets if any
+    sets = execute_query(
+        "SELECT * FROM strength_sets WHERE activity_id = ? ORDER BY set_number",
+        (activity_id,)
+    )
+    
+    activity["strength_sets"] = sets
+    return activity
 

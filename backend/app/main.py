@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.database import init_db
 from app.middleware import APIKeyAuthMiddleware, SecurityHeadersMiddleware
-from app.routers import auth, sync, activities, wellness, strength, chat, cycling
+from app.routers import auth, sync, activities, wellness, strength, chat, cycling, demo
 
 # Configure logging
 logging.basicConfig(
@@ -74,6 +74,7 @@ app.include_router(wellness.router)
 app.include_router(strength.router)
 app.include_router(chat.router)
 app.include_router(cycling.router)
+app.include_router(demo.router)
 
 
 @app.get("/api/health")

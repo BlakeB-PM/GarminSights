@@ -3,8 +3,8 @@ import { Header } from '../components/layout/Header';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
-import { CheckCircle, XCircle, RefreshCw, Database, User, Key, Eye, EyeOff } from 'lucide-react';
-import { checkAuthStatus, login, logout, syncData, type AuthStatus, type SyncStatus } from '../lib/api';
+import { CheckCircle, XCircle, RefreshCw, Database, User, Key, Eye, EyeOff, FlaskConical } from 'lucide-react';
+import { checkAuthStatus, login, logout, syncData, getDemoStatus, enableDemo, disableDemo, type AuthStatus, type SyncStatus, type DemoStatus } from '../lib/api';
 
 export function Settings() {
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
@@ -25,9 +25,40 @@ export function Settings() {
   const [showApiKey, setShowApiKey] = useState(false);
   const [selectedDays, setSelectedDays] = useState<number>(30);
 
+  // Demo mode
+  const [demoStatus, setDemoStatus] = useState<DemoStatus | null>(null);
+  const [togglingDemo, setTogglingDemo] = useState(false);
+
   useEffect(() => {
     checkAuth();
+    checkDemo();
   }, []);
+
+  const checkDemo = async () => {
+    try {
+      const status = await getDemoStatus();
+      setDemoStatus(status);
+    } catch {
+      // Backend may not support demo endpoint yet
+    }
+  };
+
+  const handleToggleDemo = async () => {
+    setTogglingDemo(true);
+    try {
+      if (demoStatus?.active) {
+        const status = await disableDemo();
+        setDemoStatus(status);
+      } else {
+        const status = await enableDemo();
+        setDemoStatus(status);
+      }
+    } catch (error: any) {
+      console.error('Demo toggle failed:', error);
+    } finally {
+      setTogglingDemo(false);
+    }
+  };
 
   const checkAuth = async () => {
     setLoading(true);
@@ -472,6 +503,66 @@ export function Settings() {
                 ANTHROPIC_API_KEY=sk-ant-...
               </pre>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Demo Mode */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FlaskConical className="w-5 h-5 text-accent" />
+            Demo Mode
+          </CardTitle>
+          <CardDescription>
+            Load synthetic fitness data to preview charts and analytics
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                {demoStatus?.active ? (
+                  <>
+                    <CheckCircle className="w-5 h-5 text-warning" />
+                    <div>
+                      <p className="text-gray-100">Demo Mode Active</p>
+                      <p className="text-sm text-gray-500">
+                        Viewing synthetic data &mdash; disable to clear
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <XCircle className="w-5 h-5 text-gray-500" />
+                    <div>
+                      <p className="text-gray-100">Demo Mode Inactive</p>
+                      <p className="text-sm text-gray-500">
+                        Enable to generate 90 days of sample data
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+              <Button
+                variant={demoStatus?.active ? 'secondary' : 'primary'}
+                onClick={handleToggleDemo}
+                isLoading={togglingDemo}
+              >
+                {demoStatus?.active ? 'Disable Demo' : 'Enable Demo'}
+              </Button>
+            </div>
+
+            {demoStatus?.active && (
+              <div className="p-3 bg-warning/10 border border-warning/30 rounded-lg">
+                <p className="text-sm text-warning">
+                  <strong>Note:</strong> Demo mode populates the database with
+                  realistic synthetic data (activities, sleep, wellness, strength
+                  sets). Disabling will remove all demo records. Real Garmin data
+                  will need to be re-synced afterward.
+                </p>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

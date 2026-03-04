@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { Sidebar } from './components/layout/Sidebar';
+import { DemoBanner } from './components/layout/DemoBanner';
 import { Dashboard } from './pages/Dashboard';
 import { DataViewer } from './pages/DataViewer';
 import { ActivityLog } from './pages/ActivityLog';
@@ -10,7 +11,7 @@ import { StrengthAnalytics } from './pages/StrengthAnalytics';
 import { CyclingAnalytics } from './pages/CyclingAnalytics';
 import { Coach } from './pages/Coach';
 import { Settings } from './pages/Settings';
-import { syncData } from './lib/api';
+import { syncData, getDemoStatus } from './lib/api';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -24,6 +25,7 @@ const queryClient = new QueryClient({
 function AppLayout() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => window.innerWidth < 1024);
+  const [isDemoActive, setIsDemoActive] = useState(false);
 
   // Auto-collapse sidebar on smaller screens (landscape mobile)
   useEffect(() => {
@@ -31,6 +33,14 @@ function AppLayout() {
     const handler = (e: MediaQueryListEvent) => setIsSidebarCollapsed(e.matches);
     mq.addEventListener('change', handler);
     return () => mq.removeEventListener('change', handler);
+  }, []);
+
+  // Poll demo status periodically so banner stays in sync
+  useEffect(() => {
+    const check = () => getDemoStatus().then(s => setIsDemoActive(s.active)).catch(() => {});
+    check();
+    const id = setInterval(check, 5000);
+    return () => clearInterval(id);
   }, []);
 
   const handleSync = async () => {
@@ -57,6 +67,7 @@ function AppLayout() {
       
       {/* Main Content */}
       <main className={`transition-all duration-300 p-3 md:p-6 ${isSidebarCollapsed ? 'ml-16' : 'ml-64'}`}>
+        {isDemoActive && <DemoBanner />}
         <div className="max-w-7xl mx-auto">
           <Routes>
             <Route path="/" element={<Dashboard />} />

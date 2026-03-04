@@ -747,3 +747,33 @@ export async function sendChatMessage(
   });
   return handleResponse<ChatResponse>(response);
 }
+
+// ============================================
+// Demo Mode API
+// ============================================
+
+export interface DemoStatus {
+  active: boolean;
+  message?: string;
+  data_generated?: Record<string, number>;
+  data_removed?: Record<string, number>;
+}
+
+export async function getDemoStatus(): Promise<DemoStatus> {
+  const response = await apiFetch(`${API_BASE}/api/demo/status`);
+  return handleResponse<DemoStatus>(response);
+}
+
+export async function enableDemo(): Promise<DemoStatus> {
+  const response = await apiFetch(`${API_BASE}/api/demo/enable`, {
+    method: 'POST',
+  });
+  return handleResponse<DemoStatus>(response);
+}
+
+export async function disableDemo(): Promise<DemoStatus> {
+  const response = await apiFetch(`${API_BASE}/api/demo/disable`, {
+    method: 'POST',
+  });
+  return handleResponse<DemoStatus>(response);
+}
