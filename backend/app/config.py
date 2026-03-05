@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     # Database
     database_path: str = "./fitness.db"
 
+    # Demo mode — uses a separate database so production data is never touched.
+    # Set DEMO_MODE=true to enable.
+    demo_mode: bool = False
+    demo_database_path: str = "./fitness_demo.db"
+
     # Garth tokens
     garth_tokens_path: str = "./.garth_tokens"
 
@@ -73,7 +78,13 @@ for _var in ("GARTH_HOME", "GARTH_TOKEN", "GARMINTOKENS"):
 
 
 def get_database_path() -> Path:
-    """Get the absolute path to the database file."""
+    """Get the absolute path to the database file.
+
+    When DEMO_MODE is enabled, returns the demo database path so that
+    the production database is never read or written.
+    """
+    if settings.demo_mode:
+        return Path(settings.demo_database_path).resolve()
     return Path(settings.database_path).resolve()
 
 

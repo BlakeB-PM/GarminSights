@@ -6,27 +6,29 @@ GarminSights is a fitness analytics dashboard built with:
 - **Backend**: Python 3 / FastAPI / SQLite (port 8000)
 - **Frontend**: React 18 / TypeScript / Vite / Tailwind CSS / Recharts (port 5173)
 
-## Quick Start
+## Quick Start (Demo Mode)
 
-### 1. Seed the database with dummy data
+Demo mode uses a separate `fitness_demo.db` database so production data is never touched.
+
+### 1. Seed the demo database
 
 ```bash
 cd backend && python3 seed_data.py
 ```
 
-This creates `backend/fitness.db` with ~16 weeks of realistic data:
+This creates `backend/fitness_demo.db` with ~16 weeks of realistic data:
 - 53 strength training workouts with sets covering all 10 muscle groups
 - 42 running activities
 - 13 cycling activities
 - 113 daily sleep + wellness records
 
-### 2. Start the backend
+### 2. Start the backend in demo mode
 
 ```bash
-cd backend && python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+cd backend && DEMO_MODE=true python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
 ```
 
-No environment variables are required for local dev (auth middleware is disabled when `APP_SECRET_KEY` is unset). Verify with:
+The `DEMO_MODE=true` env var tells the app to use `fitness_demo.db` instead of `fitness.db`. Auth middleware is disabled when `APP_SECRET_KEY` is unset. Verify with:
 
 ```bash
 curl http://localhost:8000/api/health
@@ -59,17 +61,19 @@ cd /workspace/frontend && npm install
 ### Running the full stack for UI testing
 
 ```bash
-# Seed data (only needed once, or to reset)
+# Seed demo data (only needed once, or to reset)
 cd /workspace/backend && python3 seed_data.py
 
-# Start backend (background)
-cd /workspace/backend && python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+# Start backend in demo mode (background)
+cd /workspace/backend && DEMO_MODE=true python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
 
 # Start frontend (background)
 cd /workspace/frontend && npm run dev -- --host 0.0.0.0 --port 5173 &
 ```
 
 Wait a few seconds for both servers, then use the `computerUse` subagent to navigate to `http://localhost:5173` for GUI testing.
+
+**Important**: Always use `DEMO_MODE=true` when starting the backend for testing. This uses a separate `fitness_demo.db` so production data in `fitness.db` is never affected.
 
 ### Key pages for testing
 
@@ -82,7 +86,7 @@ Wait a few seconds for both servers, then use the `computerUse` subagent to navi
 
 ### Architecture notes
 
-- **Database**: SQLite at `backend/fitness.db` (auto-created by `init_db()`)
+- **Database**: SQLite at `backend/fitness.db` (production) or `backend/fitness_demo.db` (when `DEMO_MODE=true`)
 - **No auth needed**: Leave `APP_SECRET_KEY` unset to bypass API key middleware
 - **No Garmin account needed**: Sync endpoints require Garmin login, but all read endpoints work with seeded data
 - **Muscle mapping**: `backend/app/services/muscle_mapping.py` maps exercise names to 10 muscle groups via keyword matching

@@ -1,7 +1,10 @@
-"""Seed the database with realistic dummy data for local development and UI testing.
+"""Seed the demo database with realistic dummy data for local development and UI testing.
+
+Always writes to the demo database (fitness_demo.db) so production data is
+never touched.  The app must be started with DEMO_MODE=true to read from it.
 
 Usage:
-    cd backend && python seed_data.py
+    cd backend && python3 seed_data.py
 
 Generates ~16 weeks of:
   - Strength training workouts (3-4/week) with progressive overload
@@ -12,10 +15,13 @@ Generates ~16 weeks of:
 """
 
 import json
+import os
 import random
 import sqlite3
 from datetime import date, datetime, timedelta
 from pathlib import Path
+
+os.environ["DEMO_MODE"] = "true"
 
 from app.config import get_database_path
 from app.database import init_db
