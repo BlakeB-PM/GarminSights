@@ -504,8 +504,12 @@ export async function getVolumeTrends(
   return handleResponse<VolumeTrendData[]>(response);
 }
 
-export async function getMuscleComparison(weeks = 12): Promise<MuscleComparisonData[]> {
-  const response = await apiFetch(`${API_BASE}/api/strength/muscle-comparison?weeks=${weeks}`);
+export async function getMuscleComparison(muscleGroups: string[], weeks = 12): Promise<MuscleComparisonData[]> {
+  const params = new URLSearchParams({
+    muscle_groups: muscleGroups.join(','),
+    weeks: String(weeks),
+  });
+  const response = await apiFetch(`${API_BASE}/api/strength/muscle-comparison?${params}`);
   return handleResponse<MuscleComparisonData[]>(response);
 }
 
