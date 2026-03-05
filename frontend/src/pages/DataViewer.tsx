@@ -34,7 +34,7 @@ interface DayRecord {
   activities: ActivityType[];
 }
 
-export function DataViewer() {
+export function DataViewer({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
   const [records, setRecords] = useState<DayRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDay, setSelectedDay] = useState<DayRecord | null>(null);
@@ -209,6 +209,7 @@ export function DataViewer() {
       <Header
         title="Data Viewer"
         subtitle="Verify your imported data day-by-day"
+        onMenuToggle={onMenuToggle}
       />
 
       {/* Controls */}

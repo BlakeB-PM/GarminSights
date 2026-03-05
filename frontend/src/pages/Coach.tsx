@@ -23,7 +23,7 @@ const SUGGESTED_PROMPTS = [
   "Compare my upper vs lower body volume",
 ];
 
-export function Coach() {
+export function Coach({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -110,6 +110,7 @@ export function Coach() {
       <Header
         title="AI Coach"
         subtitle="Your personal fitness advisor powered by your data"
+        onMenuToggle={onMenuToggle}
       />
 
       {/* Chat Container */}

@@ -48,7 +48,7 @@ import {
   Legend,
 } from 'recharts';
 
-export function Dashboard() {
+export function Dashboard({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
   // Initialize date range to current week
   const today = new Date();
   const getWeekStart = (date: Date): Date => {
@@ -188,6 +188,7 @@ export function Dashboard() {
       <Header
         title="Dashboard"
         subtitle="Your fitness overview at a glance"
+        onMenuToggle={onMenuToggle}
       />
 
       <DateRangeSelector

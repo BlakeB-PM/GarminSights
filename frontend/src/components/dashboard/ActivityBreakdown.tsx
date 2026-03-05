@@ -3,6 +3,7 @@ import { Activity } from 'lucide-react';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { getActivityTypeName, formatNumber, formatDurationMinutes } from '../../lib/utils';
 import type { ActivityBreakdown } from '../../lib/api';
+import { useIsMobile } from '../../hooks/useIsMobile';
 
 interface ActivityBreakdownProps {
   data: ActivityBreakdown | null;
@@ -25,6 +26,8 @@ function getColor(activityType: string): string {
 }
 
 export function ActivityBreakdown({ data, loading }: ActivityBreakdownProps) {
+  const isMobile = useIsMobile();
+
   if (loading) {
     return (
       <Card>
@@ -88,32 +91,32 @@ export function ActivityBreakdown({ data, loading }: ActivityBreakdownProps) {
       <CardContent>
         <div className="space-y-6">
           {/* Summary Stats */}
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-3 gap-2 md:gap-4">
             <div>
               <p className="text-xs text-gray-500">Total Sessions</p>
-              <p className="text-2xl font-bold font-mono">{formatNumber(data.totals.sessions)}</p>
+              <p className="text-xl md:text-2xl font-bold font-mono">{formatNumber(data.totals.sessions)}</p>
             </div>
             <div>
               <p className="text-xs text-gray-500">Total Time</p>
-              <p className="text-2xl font-bold font-mono">{formatDurationMinutes(data.totals.minutes)}</p>
+              <p className="text-xl md:text-2xl font-bold font-mono">{formatDurationMinutes(data.totals.minutes)}</p>
             </div>
             <div>
               <p className="text-xs text-gray-500">Total Calories</p>
-              <p className="text-2xl font-bold font-mono">{formatNumber(data.totals.calories)}</p>
+              <p className="text-xl md:text-2xl font-bold font-mono">{formatNumber(data.totals.calories)}</p>
             </div>
           </div>
 
           {/* Pie Chart */}
-          <div className="h-64">
+          <div className="h-48 sm:h-56 md:h-64">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
                   data={pieData}
                   cx="50%"
                   cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  outerRadius={80}
+                  labelLine={isMobile ? false : true}
+                  label={isMobile ? false : ({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  outerRadius={isMobile ? 60 : 80}
                   fill="#8884d8"
                   dataKey="value"
                 >
@@ -129,24 +132,25 @@ export function ActivityBreakdown({ data, loading }: ActivityBreakdownProps) {
                   }}
                   formatter={(value: number) => formatDurationMinutes(value)}
                 />
+                {isMobile && <Legend />}
               </PieChart>
             </ResponsiveContainer>
           </div>
 
           {/* Bar Chart */}
-          <div className="h-64">
+          <div className="h-52 sm:h-56 md:h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={barData}>
+              <BarChart data={barData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
                 <XAxis
                   dataKey="name"
                   stroke="#6b7280"
-                  fontSize={12}
+                  fontSize={isMobile ? 10 : 12}
                   angle={-45}
                   textAnchor="end"
                   height={60}
                 />
-                <YAxis stroke="#6b7280" fontSize={12} />
+                <YAxis stroke="#6b7280" fontSize={isMobile ? 10 : 12} width={isMobile ? 30 : 40} />
                 <Tooltip
                   contentStyle={{
                     backgroundColor: '#12121a',
@@ -170,4 +174,3 @@ export function ActivityBreakdown({ data, loading }: ActivityBreakdownProps) {
     </Card>
   );
 }
-

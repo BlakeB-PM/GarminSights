@@ -27,13 +27,18 @@ interface SidebarProps {
   isSyncing?: boolean;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
+  isMobileOpen?: boolean;
+  onMobileClose?: () => void;
 }
 
-export function Sidebar({ onSync, isSyncing, isCollapsed = false, onToggleCollapse }: SidebarProps) {
+export function Sidebar({ onSync, isSyncing, isCollapsed = false, onToggleCollapse, isMobileOpen = false, onMobileClose }: SidebarProps) {
   return (
     <aside className={cn(
       "fixed left-0 top-0 h-full bg-card/50 backdrop-blur-sm border-r border-card-border flex flex-col z-40 transition-all duration-300",
-      isCollapsed ? "w-16" : "w-64"
+      // Mobile: slides in/out as overlay (always full width when open)
+      isMobileOpen ? "translate-x-0 w-64" : "-translate-x-full sm:translate-x-0",
+      // Tablet/desktop: width based on collapsed state
+      isCollapsed ? "sm:w-16" : "sm:w-64"
     )}>
       {/* Logo */}
       <div className="p-4 border-b border-card-border">
@@ -41,18 +46,18 @@ export function Sidebar({ onSync, isSyncing, isCollapsed = false, onToggleCollap
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-accent-dark flex items-center justify-center flex-shrink-0">
             <Activity className="w-6 h-6 text-white" />
           </div>
-          {!isCollapsed && (
+          {(!isCollapsed || isMobileOpen) && (
             <div className="min-w-0 flex-1">
               <h1 className="text-lg font-bold text-gray-100">GarminSights</h1>
               <p className="text-xs text-gray-500">Fitness Analytics</p>
             </div>
           )}
           <button
-            onClick={onToggleCollapse}
+            onClick={isMobileOpen ? onMobileClose : onToggleCollapse}
             className="ml-auto p-1.5 rounded-lg hover:bg-card transition-colors text-gray-400 hover:text-gray-100 flex-shrink-0"
-            title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={isCollapsed && !isMobileOpen ? 'Expand sidebar' : 'Collapse sidebar'}
           >
-            {isCollapsed ? (
+            {isCollapsed && !isMobileOpen ? (
               <ChevronRight className="w-5 h-5" />
             ) : (
               <ChevronLeft className="w-5 h-5" />
@@ -67,17 +72,18 @@ export function Sidebar({ onSync, isSyncing, isCollapsed = false, onToggleCollap
           <NavLink
             key={to}
             to={to}
+            onClick={isMobileOpen ? onMobileClose : undefined}
             className={({ isActive }) =>
               cn(
                 'sidebar-link',
                 isActive && 'active',
-                isCollapsed && 'justify-center'
+                isCollapsed && !isMobileOpen && 'justify-center'
               )
             }
-            title={isCollapsed ? label : undefined}
+            title={isCollapsed && !isMobileOpen ? label : undefined}
           >
             <Icon className="w-5 h-5 flex-shrink-0" />
-            {!isCollapsed && <span>{label}</span>}
+            {(!isCollapsed || isMobileOpen) && <span>{label}</span>}
           </NavLink>
         ))}
       </nav>
@@ -90,30 +96,30 @@ export function Sidebar({ onSync, isSyncing, isCollapsed = false, onToggleCollap
           className={cn(
             'sidebar-link w-full',
             isSyncing && 'opacity-50 cursor-not-allowed',
-            isCollapsed && 'justify-center'
+            isCollapsed && !isMobileOpen && 'justify-center'
           )}
-          title={isCollapsed ? (isSyncing ? 'Syncing...' : 'Sync Data') : undefined}
+          title={isCollapsed && !isMobileOpen ? (isSyncing ? 'Syncing...' : 'Sync Data') : undefined}
         >
           <RefreshCw className={cn('w-5 h-5 flex-shrink-0', isSyncing && 'animate-spin')} />
-          {!isCollapsed && <span>{isSyncing ? 'Syncing...' : 'Sync Data'}</span>}
+          {(!isCollapsed || isMobileOpen) && <span>{isSyncing ? 'Syncing...' : 'Sync Data'}</span>}
         </button>
-        
+
         <NavLink
           to="/settings"
+          onClick={isMobileOpen ? onMobileClose : undefined}
           className={({ isActive }) =>
             cn(
               'sidebar-link',
               isActive && 'active',
-              isCollapsed && 'justify-center'
+              isCollapsed && !isMobileOpen && 'justify-center'
             )
           }
-          title={isCollapsed ? 'Settings' : undefined}
+          title={isCollapsed && !isMobileOpen ? 'Settings' : undefined}
         >
           <Settings className="w-5 h-5 flex-shrink-0" />
-          {!isCollapsed && <span>Settings</span>}
+          {(!isCollapsed || isMobileOpen) && <span>Settings</span>}
         </NavLink>
       </div>
     </aside>
   );
 }
-

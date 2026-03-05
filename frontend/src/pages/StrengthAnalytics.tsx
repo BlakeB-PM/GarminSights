@@ -25,6 +25,7 @@ import {
   type DrillDownResponse,
 } from '../lib/api';
 import { formatWeightDual, formatVolumeDual, formatDate, cn } from '../lib/utils';
+import { useIsMobile } from '../hooks/useIsMobile';
 import {
   LineChart,
   Line,
@@ -45,7 +46,8 @@ import { Activity, TrendingUp as TrendingUpIcon, ArrowUp, ArrowDown, Minus } fro
 import { Drawer } from '../components/ui/Drawer';
 import { DrillDownContent } from '../components/strength/DrillDownContent';
 
-export function StrengthAnalytics() {
+export function StrengthAnalytics({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
+  const isMobile = useIsMobile();
   const [exercises, setExercises] = useState<string[]>([]);
   const [selectedExercise, setSelectedExercise] = useState('');
   const [progress, setProgress] = useState<ExerciseProgress[]>([]);
@@ -401,6 +403,7 @@ export function StrengthAnalytics() {
       <Header
         title="Strength Lab"
         subtitle="Comprehensive strength training analytics and insights"
+        onMenuToggle={onMenuToggle}
       />
 
       {/* Section 1: Key Metrics */}
@@ -449,7 +452,7 @@ export function StrengthAnalytics() {
                 </div>
               ) : (
                 <>
-                  <div className="h-80">
+                  <div className="h-52 sm:h-64 md:h-80">
                     {volumeTrends.length > 0 ? (
                       <ResponsiveContainer width="100%" height="100%">
                         <ComposedChart 
@@ -871,7 +874,7 @@ export function StrengthAnalytics() {
                         {/* Chart 2: Total Minutes per Week */}
                         {trainingBalanceTab === 'minutes' && (
                           <div>
-                            <div className="h-96">
+                            <div className="h-56 sm:h-72 md:h-96">
                             <ResponsiveContainer width="100%" height="100%">
                               <LineChart 
                                 data={chartData} 
@@ -1122,9 +1125,9 @@ export function StrengthAnalytics() {
             }));
             
               return (
-                <div className="h-80">
+                <div className="h-52 sm:h-64 md:h-80">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart 
+                  <LineChart
                     data={chartData} 
                     margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
                     onClick={(data: any, e: any) => {
@@ -1150,7 +1153,7 @@ export function StrengthAnalytics() {
                           if (activeValues.length > 1) {
                             // Multiple points - find which one is closest to click Y
                             // Calculate Y positions for each value (approximate based on chart scale)
-                            const chartHeight = 320; // h-80 = 320px
+                            const chartHeight = isMobile ? 208 : 320; // h-52 mobile / h-80 desktop
                             const marginTop = 5;
                             const marginBottom = 5;
                             const plotHeight = chartHeight - marginTop - marginBottom;
@@ -1627,7 +1630,7 @@ export function StrengthAnalytics() {
             <TimeFrameSelector mode="days" value={muscleVolumeDays} onChange={setMuscleVolumeDays} />
           </CardHeader>
           <CardContent>
-            <div className="h-[500px]">
+            <div className="h-64 sm:h-80 md:h-[500px]">
               {muscleGroupData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
@@ -1760,7 +1763,7 @@ export function StrengthAnalytics() {
                 </div>
               )}
               {loadingStates.trainingFrequency ? (
-                <div className="h-96 flex items-center justify-center">
+                <div className="h-56 sm:h-72 md:h-96 flex items-center justify-center">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent" />
                 </div>
               ) : (
@@ -1791,7 +1794,7 @@ export function StrengthAnalytics() {
               Alphabetical
             </button>
           </div>
-          <div className="h-96">
+          <div className="h-56 sm:h-72 md:h-96">
             {trainingFrequency.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
