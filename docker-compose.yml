@@ -2,9 +2,6 @@
 # Usage:
 #   cp .env.example .env   (then fill in values)
 #   docker compose up --build
-#
-# For Cloud Run deployment, use:
-#   gcloud run deploy garminsights --source . --region us-central1
 
 services:
   app:
@@ -17,6 +14,7 @@ services:
       - ENV=production
       - PORT=8080
       - DATABASE_PATH=/data/fitness.db
+      - GARTH_TOKENS_PATH=/data/.garth_tokens
     volumes:
       - garmin-data:/data
     restart: unless-stopped

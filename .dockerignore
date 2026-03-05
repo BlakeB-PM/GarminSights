@@ -26,6 +26,13 @@ frontend/node_modules
 .garth_tokens/
 backend/.garth_tokens/
 
+# CI / deploy config
+.github
+fly.toml
+
+# AI
+.claude
+
 # Docs / plans
 *.md
 PLAN.md

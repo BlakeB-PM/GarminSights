@@ -1,0 +1,32 @@
+app = 'garminsights'
+primary_region = 'dfw'
+
+[build]
+
+[env]
+  ENV = 'production'
+  DATABASE_PATH = '/data/fitness.db'
+  GARTH_TOKENS_PATH = '/data/.garth_tokens'
+  CORS_ORIGINS = '["https://garminsights.blakebeal.com"]'
+
+[mounts]
+  source = 'garminsights_data'
+  destination = '/data'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '15s'
+    method = 'GET'
+    path = '/api/health'
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '512mb'
