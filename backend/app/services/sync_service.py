@@ -131,9 +131,7 @@ class SyncService:
             
             if not activities:
                 if start == 0:
-                    error_msg = "No activities returned from Garmin API. Possible causes: authentication expired, no activities in account, or API access issue."
-                    logger.warning(error_msg)
-                    api_errors.append(error_msg)
+                    logger.warning("No activities returned from Garmin API. Possible causes: authentication expired, no activities in account, or API access issue.")
                 else:
                     logger.info("No more activities to fetch")
                 break
