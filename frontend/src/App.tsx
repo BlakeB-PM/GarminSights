@@ -10,7 +10,7 @@ import { StrengthAnalytics } from './pages/StrengthAnalytics';
 import { CyclingAnalytics } from './pages/CyclingAnalytics';
 import { Coach } from './pages/Coach';
 import { Settings } from './pages/Settings';
-import { syncData } from './lib/api';
+import { syncData, SyncStatus } from './lib/api';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -23,6 +23,7 @@ const queryClient = new QueryClient({
 
 function AppLayout() {
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ status: SyncStatus; ts: number } | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => window.innerWidth < 1024);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -42,14 +43,26 @@ function AppLayout() {
     return () => mq.removeEventListener('change', handler);
   }, []);
 
+  // Auto-dismiss sync result toast after 5 seconds
+  useEffect(() => {
+    if (!syncResult) return;
+    const timer = setTimeout(() => setSyncResult(null), 5000);
+    return () => clearTimeout(timer);
+  }, [syncResult]);
+
   const handleSync = async () => {
     setIsSyncing(true);
+    setSyncResult(null);
     try {
-      await syncData(30);
-      // Invalidate all queries to refresh data
+      const result = await syncData(30);
       queryClient.invalidateQueries();
+      setSyncResult({ status: result, ts: Date.now() });
     } catch (error) {
       console.error('Sync failed:', error);
+      setSyncResult({
+        status: { success: false, activities_synced: 0, sleep_days_synced: 0, dailies_synced: 0, strength_sets_extracted: 0, error: String(error) },
+        ts: Date.now(),
+      });
     } finally {
       setIsSyncing(false);
     }
@@ -74,6 +87,34 @@ function AppLayout() {
           className="fixed inset-0 bg-black/50 z-30 sm:hidden"
           onClick={() => setIsMobileMenuOpen(false)}
         />
+      )}
+
+      {/* Sync result toast */}
+      {syncResult && (
+        <div
+          className={`fixed bottom-4 right-4 z-50 rounded-lg px-4 py-3 text-sm shadow-lg max-w-sm ${
+            syncResult.status.success
+              ? 'bg-green-900/90 border border-green-700 text-green-100'
+              : 'bg-red-900/90 border border-red-700 text-red-100'
+          }`}
+        >
+          {syncResult.status.success ? (
+            <div>
+              <p className="font-semibold mb-1">Sync complete</p>
+              <p className="text-xs opacity-80">
+                {syncResult.status.activities_synced} activities &middot; {syncResult.status.sleep_days_synced} sleep days &middot; {syncResult.status.dailies_synced} daily records
+              </p>
+              {syncResult.status.warnings && syncResult.status.warnings.length > 0 && (
+                <p className="text-xs opacity-70 mt-1">{syncResult.status.warnings[0]}</p>
+              )}
+            </div>
+          ) : (
+            <div>
+              <p className="font-semibold mb-1">Sync failed</p>
+              <p className="text-xs opacity-80">{syncResult.status.error ?? 'Unknown error'}</p>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Main Content — no left margin on mobile (sidebar is overlay) */}
