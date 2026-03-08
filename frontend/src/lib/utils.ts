@@ -109,23 +109,22 @@ export function formatStrideLengthDual(meters: number | null | undefined): strin
 }
 
 /**
- * Format weight in lbs with kg in parentheses.
- * Example: 135 → "135 lbs (61.2 kg)"
+ * Format weight in lbs.
+ * Example: 135 → "135 lbs"
  */
 export function formatWeightDual(lbs: number | null | undefined): string {
   if (lbs == null || lbs === 0) return '—';
-  const kg = lbs * 0.453592;
-  return `${lbs} lbs (${kg.toFixed(1)} kg)`;
+  const rounded = Math.round(lbs * 2) / 2;
+  return `${rounded} lbs`;
 }
 
 /**
- * Format volume (lbs × reps) showing both lbs and kg.
- * Example: 10000 → "10,000 lbs (4,536 kg)"
+ * Format volume (lbs × reps).
+ * Example: 10000 → "10,000 lbs"
  */
 export function formatVolumeDual(lbs: number | null | undefined): string {
   if (lbs == null || lbs === 0) return '—';
-  const kg = lbs * 0.453592;
-  return `${Math.round(lbs).toLocaleString()} lbs (${Math.round(kg).toLocaleString()} kg)`;
+  return `${Math.round(lbs).toLocaleString()} lbs`;
 }
 
 /** Format an ISO datetime string to a readable local date+time. */
