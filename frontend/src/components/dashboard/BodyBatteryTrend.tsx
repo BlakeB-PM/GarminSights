@@ -1,38 +1,16 @@
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
 import { Battery, TrendingUp, TrendingDown } from 'lucide-react';
-import { LineChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { getDailyTrend, type DailyData } from '../../lib/api';
-import { useEffect, useState } from 'react';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import type { DailyData } from '../../lib/api';
 
 interface BodyBatteryTrendProps {
   latestDaily: DailyData | null;
+  trendData: Array<{ date: string; value: number }>;
   loading?: boolean;
-  startDate?: string;
-  endDate?: string;
 }
 
-export function BodyBatteryTrend({ latestDaily, loading, startDate, endDate }: BodyBatteryTrendProps) {
-  const [trendData, setTrendData] = useState<Array<{ date: string; value: number }>>([]);
-  const [trendLoading, setTrendLoading] = useState(true);
-
-  useEffect(() => {
-    async function loadTrend() {
-      if (!startDate || !endDate) return;
-      
-      setTrendLoading(true);
-      try {
-        const data = await getDailyTrend('body_battery_high', undefined, startDate, endDate);
-        setTrendData(data);
-      } catch (err) {
-        console.error('Failed to load body battery trend:', err);
-      } finally {
-        setTrendLoading(false);
-      }
-    }
-    loadTrend();
-  }, [startDate, endDate]);
-
-  if (loading || trendLoading) {
+export function BodyBatteryTrend({ latestDaily, trendData, loading }: BodyBatteryTrendProps) {
+  if (loading) {
     return (
       <Card>
         <CardHeader>
@@ -42,9 +20,7 @@ export function BodyBatteryTrend({ latestDaily, loading, startDate, endDate }: B
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent" />
-          </div>
+          <div className="h-64 animate-pulse bg-gray-800 rounded-lg" />
         </CardContent>
       </Card>
     );
@@ -73,9 +49,8 @@ export function BodyBatteryTrend({ latestDaily, loading, startDate, endDate }: B
   const previousValue = trendData.length > 1 ? trendData[trendData.length - 2]?.value : currentValue;
   const trend = currentValue > previousValue ? 'up' : currentValue < previousValue ? 'down' : 'neutral';
 
-  // Format chart data
   const chartData = trendData.map((item) => ({
-    date: new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    date: new Date(item.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
     value: item.value,
   }));
 
@@ -89,10 +64,10 @@ export function BodyBatteryTrend({ latestDaily, loading, startDate, endDate }: B
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          {/* Current Value */}
+          {/* Current value */}
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-gray-500">Current</p>
+              <p className="text-xs text-gray-500">Today's peak</p>
               <div className="flex items-center gap-2">
                 <p className="text-4xl font-bold font-mono text-accent">{currentValue}</p>
                 {trend !== 'neutral' && (
@@ -118,44 +93,37 @@ export function BodyBatteryTrend({ latestDaily, loading, startDate, endDate }: B
             )}
           </div>
 
-          {/* Trend Chart */}
+          {/* Area chart */}
           {chartData.length > 0 && (
             <div className="h-48">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData}>
+                <AreaChart data={chartData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
+                  <defs>
+                    <linearGradient id="batteryGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
-                  <XAxis
-                    dataKey="date"
-                    stroke="#6b7280"
-                    fontSize={10}
-                  />
-                  <YAxis
-                    stroke="#6b7280"
-                    fontSize={10}
-                    domain={[0, 100]}
-                  />
+                  <XAxis dataKey="date" stroke="#6b7280" fontSize={10} />
+                  <YAxis stroke="#6b7280" fontSize={10} domain={[0, 100]} />
                   <Tooltip
                     contentStyle={{
                       backgroundColor: '#12121a',
                       border: '1px solid #1e1e2e',
                       borderRadius: '8px',
                     }}
+                    formatter={(value: number) => [`${value}`, 'Body Battery']}
                   />
                   <Area
                     type="monotone"
                     dataKey="value"
                     stroke="#0ea5e9"
-                    fill="#0ea5e9"
-                    fillOpacity={0.2}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="value"
-                    stroke="#0ea5e9"
                     strokeWidth={2}
-                    dot={{ fill: '#0ea5e9', r: 4 }}
+                    fill="url(#batteryGradient)"
+                    dot={{ fill: '#0ea5e9', r: 3 }}
                   />
-                </LineChart>
+                </AreaChart>
               </ResponsiveContainer>
             </div>
           )}
@@ -164,4 +132,3 @@ export function BodyBatteryTrend({ latestDaily, loading, startDate, endDate }: B
     </Card>
   );
 }
-

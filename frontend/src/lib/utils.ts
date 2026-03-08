@@ -235,6 +235,78 @@ export function getStressCategoryColor(category: string): string {
 }
 
 /**
+ * Return a human-readable label describing a date range.
+ * Examples: "Today", "This week", "This month", "Mar 1 – Mar 7", etc.
+ */
+export function getDateRangeLabel(startDate: string, endDate: string): string {
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+
+  const getWeekStart = (d: Date): string => {
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    const ws = new Date(d);
+    ws.setDate(diff);
+    return ws.toISOString().split('T')[0];
+  };
+  const getWeekEnd = (d: Date): string => {
+    const ws = new Date(getWeekStart(d));
+    ws.setDate(ws.getDate() + 6);
+    return ws.toISOString().split('T')[0];
+  };
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+  const lastWeekStartDate = (() => {
+    const ws = new Date(getWeekStart(today));
+    ws.setDate(ws.getDate() - 7);
+    return ws.toISOString().split('T')[0];
+  })();
+  const lastWeekEndDate = (() => {
+    const ws = new Date(lastWeekStartDate);
+    ws.setDate(ws.getDate() + 6);
+    return ws.toISOString().split('T')[0];
+  })();
+  const lastMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1).toISOString().split('T')[0];
+  const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0).toISOString().split('T')[0];
+
+  if (startDate === todayStr && endDate === todayStr) return 'Today';
+  if (startDate === getWeekStart(today) && endDate === getWeekEnd(today)) return 'This week';
+  if (startDate === monthStart && endDate === todayStr) return 'This month';
+  if (startDate === lastWeekStartDate && endDate === lastWeekEndDate) return 'Last week';
+  if (startDate === lastMonthStart && endDate === lastMonthEnd) return 'Last month';
+
+  // Generic range label
+  const fmt = (d: string) => {
+    const parts = d.split('-');
+    const dt = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+    return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+  if (startDate === endDate) return fmt(startDate);
+  return `${fmt(startDate)} – ${fmt(endDate)}`;
+}
+
+/**
+ * Format an ISO datetime string as a human-friendly "last synced" label.
+ * Examples: "Synced today at 2:34 PM", "Synced yesterday", "Synced Mar 3"
+ */
+export function formatLastSynced(isoString: string | null): string {
+  if (!isoString) return 'Never synced';
+  const date = new Date(isoString);
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+  const dateStr = date.toISOString().split('T')[0];
+  const yesterdayDate = new Date(now);
+  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+  const yesterdayStr = yesterdayDate.toISOString().split('T')[0];
+
+  if (dateStr === todayStr) {
+    const time = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    return `Synced today at ${time}`;
+  }
+  if (dateStr === yesterdayStr) return 'Synced yesterday';
+  return `Synced ${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+}
+
+/**
  * Calculate sleep stage percentages from raw seconds.
  */
 export function calculateSleepStagePercentages(sleep: {

@@ -100,6 +100,7 @@ export function TrainingLoadCard({ data, loading }: TrainingLoadCardProps) {
                   dataKey="value"
                   cornerRadius={10}
                   fill={getColorHex(statusInfo.status)}
+                  background={{ fill: '#1e1e2e' }}
                 >
                   <Cell fill={getColorHex(statusInfo.status)} />
                 </RadialBar>

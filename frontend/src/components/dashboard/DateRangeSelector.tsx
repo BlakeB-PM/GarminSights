@@ -3,7 +3,9 @@ import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Card } from '../ui/Card';
-import { formatDate } from '../../lib/utils';
+import { cn, formatDate } from '../../lib/utils';
+
+type Preset = 'today' | 'week' | 'month' | 'lastWeek' | 'lastMonth' | 'custom';
 
 interface DateRangeSelectorProps {
   startDate: string;
@@ -13,14 +15,15 @@ interface DateRangeSelectorProps {
 
 export function DateRangeSelector({ startDate, endDate, onDateChange }: DateRangeSelectorProps) {
   const [showCustom, setShowCustom] = useState(false);
+  const [activePreset, setActivePreset] = useState<Preset>('week');
 
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
-  
+
   const getWeekStart = (date: Date): Date => {
     const d = new Date(date);
     const day = d.getDay();
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
     return new Date(d.setDate(diff));
   };
 
@@ -31,7 +34,7 @@ export function DateRangeSelector({ startDate, endDate, onDateChange }: DateRang
     return weekEnd;
   };
 
-  const setPreset = (preset: 'today' | 'week' | 'month' | 'lastWeek' | 'lastMonth') => {
+  const setPreset = (preset: Exclude<Preset, 'custom'>) => {
     let start: Date;
     let end: Date = new Date(today);
 
@@ -48,143 +51,173 @@ export function DateRangeSelector({ startDate, endDate, onDateChange }: DateRang
         start = new Date(today.getFullYear(), today.getMonth(), 1);
         end = new Date(today);
         break;
-      case 'lastWeek':
+      case 'lastWeek': {
         const lastWeekStart = getWeekStart(new Date(today));
         lastWeekStart.setDate(lastWeekStart.getDate() - 7);
         start = lastWeekStart;
         end = new Date(start);
         end.setDate(end.getDate() + 6);
         break;
+      }
       case 'lastMonth':
         start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
         end = new Date(today.getFullYear(), today.getMonth(), 0);
         break;
+      default:
+        return;
     }
 
+    setActivePreset(preset);
+    setShowCustom(false);
     onDateChange(
       start.toISOString().split('T')[0],
-      end.toISOString().split('T')[0]
+      end.toISOString().split('T')[0],
     );
-    setShowCustom(false);
   };
 
-  const navigateWeek = (direction: 'prev' | 'next') => {
-    const currentStart = new Date(startDate);
-    const daysDiff = direction === 'prev' ? -7 : 7;
-    const newStart = new Date(currentStart);
-    newStart.setDate(newStart.getDate() + daysDiff);
-    const newEnd = new Date(newStart);
-    newEnd.setDate(newEnd.getDate() + 6);
-    
-    onDateChange(
-      newStart.toISOString().split('T')[0],
-      newEnd.toISOString().split('T')[0]
-    );
+  const navigatePeriod = (direction: 'prev' | 'next') => {
+    const delta = direction === 'prev' ? -1 : 1;
+
+    if (activePreset === 'today') {
+      const d = new Date(startDate);
+      d.setDate(d.getDate() + delta);
+      const s = d.toISOString().split('T')[0];
+      onDateChange(s, s);
+    } else if (activePreset === 'week' || activePreset === 'lastWeek') {
+      const newStart = new Date(startDate);
+      newStart.setDate(newStart.getDate() + delta * 7);
+      const newEnd = new Date(newStart);
+      newEnd.setDate(newEnd.getDate() + 6);
+      const ns = newStart.toISOString().split('T')[0];
+      const ne = newEnd.toISOString().split('T')[0];
+      // Update preset: if moved to current week → 'week', else 'lastWeek' or custom
+      const currentWeekStart = getWeekStart(today).toISOString().split('T')[0];
+      setActivePreset(ns === currentWeekStart ? 'week' : 'lastWeek');
+      onDateChange(ns, ne);
+    } else if (activePreset === 'month' || activePreset === 'lastMonth') {
+      const ref = new Date(startDate);
+      ref.setMonth(ref.getMonth() + delta);
+      const newStart = new Date(ref.getFullYear(), ref.getMonth(), 1);
+      const isCurrentMonth =
+        newStart.getFullYear() === today.getFullYear() && newStart.getMonth() === today.getMonth();
+      const newEnd = isCurrentMonth
+        ? new Date(today)
+        : new Date(ref.getFullYear(), ref.getMonth() + 1, 0);
+      setActivePreset(isCurrentMonth ? 'month' : 'lastMonth');
+      onDateChange(newStart.toISOString().split('T')[0], newEnd.toISOString().split('T')[0]);
+    } else {
+      // Custom: shift by the range duration
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const days = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      start.setDate(start.getDate() + delta * days);
+      end.setDate(end.getDate() + delta * days);
+      onDateChange(start.toISOString().split('T')[0], end.toISOString().split('T')[0]);
+    }
   };
+
+  const presets: Array<{ key: Exclude<Preset, 'custom'>; label: string }> = [
+    { key: 'today', label: 'Today' },
+    { key: 'week', label: 'This Week' },
+    { key: 'month', label: 'This Month' },
+    { key: 'lastWeek', label: 'Last Week' },
+    { key: 'lastMonth', label: 'Last Month' },
+  ];
 
   return (
     <Card className="mb-6">
-      <div className="p-4">
-        <div className="flex items-center justify-between mb-4">
+      <div className="p-4 space-y-3">
+        {/* Header row: label + arrows */}
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-accent" />
-            <h3 className="text-lg font-semibold">Date Range</h3>
+            <Calendar className="w-4 h-4 text-accent" />
+            <span className="text-base font-semibold text-white">
+              {formatDate(startDate)}
+              {startDate !== endDate && ` – ${formatDate(endDate)}`}
+            </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => navigateWeek('prev')}
-              className="p-1"
+              onClick={() => navigatePeriod('prev')}
+              className="p-1.5"
+              title="Previous period"
             >
               <ChevronLeft className="w-4 h-4" />
             </Button>
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => navigateWeek('next')}
-              className="p-1"
+              onClick={() => navigatePeriod('next')}
+              className="p-1.5"
               disabled={endDate >= todayStr}
+              title="Next period"
             >
               <ChevronRight className="w-4 h-4" />
             </Button>
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2 mb-4">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setPreset('today')}
-            className={startDate === endDate && startDate === todayStr ? 'bg-accent/20' : ''}
-          >
-            Today
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setPreset('week')}
-          >
-            This Week
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setPreset('month')}
-          >
-            This Month
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setPreset('lastWeek')}
-          >
-            Last Week
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setPreset('lastMonth')}
-          >
-            Last Month
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowCustom(!showCustom)}
+        {/* Preset pills */}
+        <div className="flex flex-wrap gap-2">
+          {presets.map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setPreset(key)}
+              className={cn(
+                'px-3 py-1 rounded-full text-sm font-medium transition-colors',
+                activePreset === key
+                  ? 'bg-accent text-white'
+                  : 'bg-card-border text-gray-400 hover:bg-accent/20 hover:text-accent',
+              )}
+            >
+              {label}
+            </button>
+          ))}
+          <button
+            onClick={() => {
+              setActivePreset('custom');
+              setShowCustom(!showCustom);
+            }}
+            className={cn(
+              'px-3 py-1 rounded-full text-sm font-medium transition-colors',
+              activePreset === 'custom'
+                ? 'bg-accent text-white'
+                : 'bg-card-border text-gray-400 hover:bg-accent/20 hover:text-accent',
+            )}
           >
             Custom
-          </Button>
+          </button>
         </div>
 
+        {/* Custom date inputs */}
         {showCustom && (
-          <div className="grid grid-cols-2 gap-4 mt-4">
+          <div className="grid grid-cols-2 gap-4 pt-1">
             <Input
               type="date"
               label="Start Date"
               value={startDate}
-              onChange={(e) => onDateChange(e.target.value, endDate)}
+              onChange={(e) => {
+                setActivePreset('custom');
+                onDateChange(e.target.value, endDate);
+              }}
               max={endDate}
             />
             <Input
               type="date"
               label="End Date"
               value={endDate}
-              onChange={(e) => onDateChange(startDate, e.target.value)}
+              onChange={(e) => {
+                setActivePreset('custom');
+                onDateChange(startDate, e.target.value);
+              }}
               min={startDate}
               max={todayStr}
             />
           </div>
         )}
-
-        <div className="mt-4 text-sm text-gray-400">
-          <span>
-            {formatDate(startDate, { month: 'short', day: 'numeric', year: 'numeric' })} -{' '}
-            {formatDate(endDate, { month: 'short', day: 'numeric', year: 'numeric' })}
-          </span>
-        </div>
       </div>
     </Card>
   );
 }
-
