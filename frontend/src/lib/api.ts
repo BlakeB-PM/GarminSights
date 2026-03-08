@@ -91,6 +91,22 @@ export interface SyncStatus {
   details?: Record<string, unknown>;
 }
 
+export interface SyncDbStatus {
+  authenticated: boolean;
+  username?: string | null;
+  last_synced?: string | null;
+  database: {
+    activities_count: number;
+    sleep_count: number;
+    dailies_count: number;
+  };
+}
+
+export async function getSyncStatus(): Promise<SyncDbStatus> {
+  const response = await apiFetch(`${API_BASE}/api/sync/status`);
+  return handleResponse<SyncDbStatus>(response);
+}
+
 export async function syncData(daysBack = 30): Promise<SyncStatus> {
   const response = await apiFetch(`${API_BASE}/api/sync/`, {
     method: 'POST',
@@ -305,6 +321,11 @@ export async function getSleepData(
   return handleResponse<SleepData[]>(response);
 }
 
+export async function getLatestSleep(): Promise<SleepData | null> {
+  const response = await apiFetch(`${API_BASE}/api/wellness/sleep/latest`);
+  return handleResponse<SleepData | null>(response);
+}
+
 export async function getDailyData(
   limit?: number,
   startDate?: string,
@@ -316,6 +337,11 @@ export async function getDailyData(
   if (endDate) params.set('end_date', endDate);
   const response = await apiFetch(`${API_BASE}/api/wellness/dailies?${params}`);
   return handleResponse<DailyData[]>(response);
+}
+
+export async function getLatestDaily(): Promise<DailyData | null> {
+  const response = await apiFetch(`${API_BASE}/api/wellness/dailies/latest`);
+  return handleResponse<DailyData | null>(response);
 }
 
 export async function getDailyTrend(

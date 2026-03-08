@@ -24,17 +24,21 @@ async def sync_status():
         activities_count = execute_query("SELECT COUNT(*) as count FROM activities")[0]["count"]
         sleep_count = execute_query("SELECT COUNT(*) as count FROM sleep")[0]["count"]
         dailies_count = execute_query("SELECT COUNT(*) as count FROM dailies")[0]["count"]
+        last_sync_result = execute_query("SELECT MAX(start_time) as ts FROM activities")
+        last_synced = last_sync_result[0]["ts"] if last_sync_result and last_sync_result[0].get("ts") else None
     except Exception as e:
         activities_count = 0
         sleep_count = 0
         dailies_count = 0
-    
+        last_synced = None
+
     # Check session
     session_valid = garmin.check_session()
-    
+
     return {
         "authenticated": session_valid,
         "username": garmin._username if session_valid else None,
+        "last_synced": last_synced,
         "database": {
             "activities_count": activities_count,
             "sleep_count": sleep_count,

@@ -59,6 +59,20 @@ export function SleepStages({ latestSleep, sleepData, loading }: SleepStagesProp
   const totalSeconds = latestSleep.total_sleep_seconds ?? 0;
   const totalHours = totalSeconds / 3600;
 
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+  const sleepDateLabel =
+    latestSleep.date === todayStr || latestSleep.date === yesterdayStr
+      ? 'Last night'
+      : new Date(latestSleep.date + 'T00:00:00').toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+        });
+
   // Prepare pie chart data
   const pieData = [
     { name: 'Deep', value: percentages.deep, seconds: latestSleep.deep_sleep_seconds || 0 },
@@ -85,6 +99,7 @@ export function SleepStages({ latestSleep, sleepData, loading }: SleepStagesProp
         <CardTitle className="flex items-center gap-2">
           <Moon className="w-5 h-5 text-accent" />
           Sleep Stages
+          <span className="text-xs font-normal text-gray-500 ml-1">({sleepDateLabel})</span>
         </CardTitle>
       </CardHeader>
       <CardContent>
