@@ -114,8 +114,9 @@ export function formatStrideLengthDual(meters: number | null | undefined): strin
  */
 export function formatWeightDual(lbs: number | null | undefined): string {
   if (lbs == null || lbs === 0) return '—';
-  const kg = lbs * 0.453592;
-  return `${lbs} lbs (${kg.toFixed(1)} kg)`;
+  const rounded = Math.round(lbs * 2) / 2;
+  const kg = rounded * 0.453592;
+  return `${rounded} lbs (${kg.toFixed(1)} kg)`;
 }
 
 /**
