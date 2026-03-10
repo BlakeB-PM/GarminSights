@@ -67,6 +67,8 @@ export function Dashboard({ onMenuToggle }: { onMenuToggle?: () => void } = {}) 
     return weekEnd;
   };
 
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
   const [startDate, setStartDate] = useState(() => getWeekStart(today).toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(() => getWeekEnd(today).toISOString().split('T')[0]);
 
@@ -240,7 +242,13 @@ export function Dashboard({ onMenuToggle }: { onMenuToggle?: () => void } = {}) 
           <StatCard
             title="Body Battery"
             value={latestDailySnapshot?.body_battery_high ?? '—'}
-            subtitle="Today's peak"
+            subtitle={
+              latestDailySnapshot?.date === todayStr
+                ? "Today's peak"
+                : latestDailySnapshot?.date
+                ? `Peak ${new Date(latestDailySnapshot.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                : "Today's peak"
+            }
             icon={<Battery className="w-5 h-5 text-accent" />}
             scoreValue={latestDailySnapshot?.body_battery_high ?? 0}
           />
@@ -350,7 +358,7 @@ export function Dashboard({ onMenuToggle }: { onMenuToggle?: () => void } = {}) 
       {/* ── Section 4: Trends (date-range aware) ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
         <ActivityBreakdown data={activityBreakdown} loading={periodLoading} />
-        <SleepStages latestSleep={sleepData[0] || null} sleepData={sleepData} loading={periodLoading} />
+        <SleepStages latestSleep={latestSleepSnapshot || sleepData[0] || null} sleepData={sleepData} loading={periodLoading} />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
