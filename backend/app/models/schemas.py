@@ -373,7 +373,7 @@ class DrillDownResponse(BaseModel):
 class ChatRequest(BaseModel):
     """AI Coach chat request."""
     message: str
-    context_days: int = Field(default=7, ge=1, le=30)
+    context_days: int = Field(default=30, ge=1, le=90)
 
 
 class ChatResponse(BaseModel):
