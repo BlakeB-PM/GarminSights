@@ -60,10 +60,11 @@ export function SleepStages({ latestSleep, sleepData, loading }: SleepStagesProp
   const totalHours = totalSeconds / 3600;
 
   const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const todayStr = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().split('T')[0];
+  const yesterdayStr = `${yesterday.getFullYear()}-${pad(yesterday.getMonth() + 1)}-${pad(yesterday.getDate())}`;
 
   const sleepDateLabel =
     latestSleep.date === todayStr || latestSleep.date === yesterdayStr
