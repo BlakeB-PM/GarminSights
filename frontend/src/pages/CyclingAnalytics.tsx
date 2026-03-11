@@ -255,8 +255,9 @@ export function CyclingAnalytics({ onMenuToggle }: { onMenuToggle?: () => void }
   return (
     <div className="space-y-4 md:space-y-6">
       <Header
-        title="Cycling Analytics" 
+        title="Cycling Analytics"
         subtitle="Power-based performance insights"
+        onMenuToggle={onMenuToggle}
       />
       
       {/* Section 1: Core KPIs */}
