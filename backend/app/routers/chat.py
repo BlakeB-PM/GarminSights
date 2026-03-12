@@ -2,6 +2,7 @@
 
 import logging
 import time
+import anthropic
 from fastapi import APIRouter, HTTPException
 
 from app.models.schemas import ChatRequest, ChatResponse
@@ -54,6 +55,18 @@ async def chat(request: ChatRequest):
         raise HTTPException(
             status_code=503,
             detail="AI Coach is not configured. Set the ANTHROPIC_API_KEY environment variable."
+        )
+    except anthropic.AuthenticationError:
+        logger.exception("Anthropic authentication error")
+        raise HTTPException(
+            status_code=503,
+            detail="AI Coach authentication failed. Please check your ANTHROPIC_API_KEY."
+        )
+    except anthropic.APIError as e:
+        logger.exception("Anthropic API error: %s", e)
+        raise HTTPException(
+            status_code=502,
+            detail=f"AI service error: {e}"
         )
     except Exception as e:
         logger.exception("Chat error: %s", e)

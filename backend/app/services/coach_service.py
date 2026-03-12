@@ -112,8 +112,9 @@ class CoachService:
                 activity_type = (a["activity_type"] or "unknown").replace("_", " ").title()
                 label = a["name"] or activity_type
                 cal_str = f", {a['calories']} cal" if a["calories"] else ""
+                minutes_str = f"{a['minutes']:.0f} min" if a["minutes"] is not None else "? min"
                 context_parts.append(
-                    f"- {a['date']}: {label} ({activity_type}) — {a['minutes']:.0f} min{cal_str}"
+                    f"- {a['date']}: {label} ({activity_type}) — {minutes_str}{cal_str}"
                 )
             summary["activities_count"] = len(activities)
         else:
@@ -180,7 +181,8 @@ class CoachService:
         if dailies and dailies[0]["days_with_data"]:
             d = dailies[0]
             context_parts.append("\n## Daily Wellness (averages over period)")
-            context_parts.append(f"- Average daily steps: {d['avg_steps']:,.0f}")
+            if d["avg_steps"] is not None:
+                context_parts.append(f"- Average daily steps: {d['avg_steps']:,.0f}")
             if d["avg_battery_high"] is not None:
                 context_parts.append(
                     f"- Average Body Battery: high {d['avg_battery_high']:.0f}, low {d['avg_battery_low']:.0f} /100"
