@@ -54,16 +54,16 @@ class CoachService:
 
     def __init__(self):
         """Initialize the coach service."""
-        self._client: Optional[anthropic.Anthropic] = None
+        self._client: Optional[anthropic.AsyncAnthropic] = None
 
     @property
-    def client(self) -> anthropic.Anthropic:
+    def client(self) -> anthropic.AsyncAnthropic:
         """Get or create the Anthropic client."""
         if self._client is None:
             api_key = settings.anthropic_api_key
             if not api_key:
                 raise ValueError("ANTHROPIC_API_KEY not set in environment")
-            self._client = anthropic.Anthropic(api_key=api_key)
+            self._client = anthropic.AsyncAnthropic(api_key=api_key)
         return self._client
 
     def build_fitness_context(self, days: int = 30) -> tuple[str, dict]:
@@ -326,8 +326,8 @@ class CoachService:
 My question: {message}"""
 
         try:
-            response = self.client.messages.create(
-                model="claude-sonnet-4-20250514",
+            response = await self.client.messages.create(
+                model="claude-sonnet-4-6",
                 max_tokens=2048,
                 system=SYSTEM_PROMPT,
                 messages=[
