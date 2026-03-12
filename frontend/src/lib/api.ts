@@ -27,6 +27,15 @@ async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const text = await response.text().catch(() => '');
+    // FastAPI returns {"detail": "..."} for HTTP errors
+    try {
+      const json = JSON.parse(text);
+      if (typeof json.detail === 'string') {
+        throw new Error(json.detail);
+      }
+    } catch (e) {
+      if (e instanceof Error && e.message !== text) throw e;
+    }
     throw new Error(text || `HTTP ${response.status}`);
   }
   return response.json() as Promise<T>;
