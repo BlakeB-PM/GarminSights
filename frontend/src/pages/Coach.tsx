@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Header } from '../components/layout/Header';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { Send, Bot, User, Sparkles, Copy, Check } from 'lucide-react';
+import { Send, Bot, User, Sparkles, Copy, Check, Plus } from 'lucide-react';
 import { sendChatMessage, type ChatResponse } from '../lib/api';
 import { cn } from '../lib/utils';
 import ReactMarkdown from 'react-markdown';
@@ -15,12 +15,12 @@ interface Message {
 }
 
 const SUGGESTED_PROMPTS = [
-  "Analyze my recovery this week",
-  "Plan my next strength workout",
-  "What's my current max bench press?",
-  "How's my sleep quality trending?",
-  "Am I overtraining?",
-  "Compare my upper vs lower body volume",
+  "How are my squat and deadlift progressing?",
+  "Am I training each muscle group enough?",
+  "What does my cardio volume look like this month?",
+  "How's my training load — am I overreaching?",
+  "What are my strongest lifts right now?",
+  "How's my cycling power trending?",
 ];
 
 export function Coach({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
@@ -82,10 +82,11 @@ export function Coach({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
 
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (error) {
+      const detail = error instanceof Error ? error.message : 'An unexpected error occurred.';
       const errorMessage: Message = {
         id: crypto.randomUUID(),
         role: 'assistant',
-        content: 'Sorry, I encountered an error. Please make sure the backend is running and you have synced some data.',
+        content: `Sorry, something went wrong: ${detail}`,
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMessage]);
@@ -112,6 +113,15 @@ export function Coach({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
         subtitle="Your personal fitness advisor powered by your data"
         onMenuToggle={onMenuToggle}
       />
+
+      {/* New Chat button */}
+      {messages.length > 0 && (
+        <div className="flex justify-end mb-2">
+          <Button variant="ghost" size="sm" onClick={handleClearHistory}>
+            <Plus className="w-4 h-4 mr-1" /> New Chat
+          </Button>
+        </div>
+      )}
 
       {/* Chat Container */}
       <Card className="flex-1 flex flex-col min-h-0 overflow-hidden">
