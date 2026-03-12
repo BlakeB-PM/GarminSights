@@ -6,6 +6,7 @@ import { Input } from '../components/ui/Input';
 import { CheckCircle, XCircle, RefreshCw, Database, User, Key, Eye, EyeOff } from 'lucide-react';
 import { checkAuthStatus, login, logout, syncData, type AuthStatus, type SyncStatus } from '../lib/api';
 
+
 export function Settings({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
@@ -21,8 +22,6 @@ export function Settings({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
   // MFA step 2: shown when login returns needs_mfa
   const [mfaToken, setMfaToken] = useState<string | null>(null);
   const [mfaCode, setMfaCode] = useState('');
-  const [anthropicKey, setAnthropicKey] = useState('');
-  const [showApiKey, setShowApiKey] = useState(false);
   const [selectedDays, setSelectedDays] = useState<number>(30);
 
   useEffect(() => {
@@ -414,65 +413,6 @@ export function Settings({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
                 )}
               </div>
             )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* AI Coach Configuration */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Key className="w-5 h-5 text-accent" />
-            AI Coach Configuration
-          </CardTitle>
-          <CardDescription>
-            Configure your Anthropic API key to enable the AI Coach
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-400 mb-1">
-                Anthropic API Key
-              </label>
-              <div className="relative">
-                <Input
-                  type={showApiKey ? 'text' : 'password'}
-                  value={anthropicKey}
-                  onChange={(e) => setAnthropicKey(e.target.value)}
-                  placeholder="sk-ant-..."
-                  className="pr-10 font-mono text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowApiKey(!showApiKey)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
-                >
-                  {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-              <p className="text-xs text-gray-500 mt-2">
-                Get your API key from{' '}
-                <a 
-                  href="https://console.anthropic.com/" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="text-accent hover:underline"
-                >
-                  console.anthropic.com
-                </a>
-              </p>
-            </div>
-            
-            <div className="p-3 bg-background rounded-lg border border-card-border">
-              <p className="text-sm text-gray-400">
-                <strong className="text-gray-300">Note:</strong> To persist the API key, add it to your{' '}
-                <code className="text-accent">backend/.env</code> file:
-              </p>
-              <pre className="mt-2 text-xs text-accent bg-card p-2 rounded overflow-x-auto">
-                ANTHROPIC_API_KEY=sk-ant-...
-              </pre>
-            </div>
           </div>
         </CardContent>
       </Card>
