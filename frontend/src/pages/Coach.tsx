@@ -82,7 +82,15 @@ export function Coach({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
 
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (error) {
-      const detail = error instanceof Error ? error.message : 'An unexpected error occurred.';
+      let detail: string;
+      if (error instanceof TypeError && error.message === 'Failed to fetch') {
+        detail = 'Cannot reach the server. Is the backend running?';
+      } else if (error instanceof Error) {
+        detail = error.message;
+      } else {
+        detail = 'An unexpected error occurred.';
+      }
+      console.error('[AI Coach] Chat error:', error);
       const errorMessage: Message = {
         id: crypto.randomUUID(),
         role: 'assistant',
