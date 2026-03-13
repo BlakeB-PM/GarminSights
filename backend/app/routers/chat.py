@@ -94,14 +94,87 @@ async def chat(request: ChatRequest):
 async def get_context_preview(days: int = 7):
     """
     Preview the fitness context that will be sent to the AI.
-    
+
     Useful for debugging and understanding what data the AI sees.
     """
     coach = get_coach_service()
     context_text, summary = coach.build_fitness_context(days)
-    
+
     return {
         "context": context_text,
         "summary": summary
     }
+
+
+@router.get("/chat/test")
+async def test_coach():
+    """
+    Diagnostic endpoint that tests each component of the AI Coach pipeline.
+
+    Hit this endpoint to see exactly which step is failing.
+    """
+    from app.services.coach_service import COACH_MODEL
+    results: dict = {"model": COACH_MODEL, "steps": {}}
+
+    # Step 1: Database — can we build fitness context?
+    try:
+        coach = get_coach_service()
+        context_text, summary = coach.build_fitness_context(7)
+        results["steps"]["build_context"] = {
+            "status": "ok",
+            "context_length": len(context_text),
+            "summary": summary,
+        }
+    except Exception as e:
+        results["steps"]["build_context"] = {
+            "status": "error",
+            "error": f"{type(e).__name__}: {e}",
+        }
+
+    # Step 2: API key — is it configured?
+    try:
+        client = coach.client  # triggers lazy init
+        results["steps"]["api_key"] = {
+            "status": "ok",
+            "key_prefix": client.api_key[:12] + "..." if client.api_key else "(empty)",
+        }
+    except ValueError as e:
+        results["steps"]["api_key"] = {
+            "status": "error",
+            "error": str(e),
+        }
+    except Exception as e:
+        results["steps"]["api_key"] = {
+            "status": "error",
+            "error": f"{type(e).__name__}: {e}",
+        }
+
+    # Step 3: Anthropic API — can we reach it?
+    if results["steps"].get("api_key", {}).get("status") == "ok":
+        try:
+            response = await coach.client.messages.create(
+                model=COACH_MODEL,
+                max_tokens=16,
+                messages=[{"role": "user", "content": "Say OK"}],
+            )
+            results["steps"]["api_call"] = {
+                "status": "ok",
+                "response_preview": response.content[0].text[:50] if response.content else "(empty)",
+            }
+        except Exception as e:
+            results["steps"]["api_call"] = {
+                "status": "error",
+                "error": f"{type(e).__name__}: {e}",
+            }
+    else:
+        results["steps"]["api_call"] = {"status": "skipped", "reason": "API key not configured"}
+
+    # Overall verdict
+    all_ok = all(
+        s.get("status") == "ok"
+        for s in results["steps"].values()
+    )
+    results["overall"] = "ok" if all_ok else "failing"
+
+    return results
 
