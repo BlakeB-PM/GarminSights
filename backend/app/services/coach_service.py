@@ -145,7 +145,8 @@ class CoachService:
 
             context_parts.append("\n## Sleep (nightly, newest first)")
             if avg_score is not None:
-                avg_hours = sum(r["hours"] for r in sleep_rows if r["hours"]) / len(sleep_rows)
+                hours_with_data = [r["hours"] for r in sleep_rows if r["hours"]]
+                avg_hours = sum(hours_with_data) / len(hours_with_data) if hours_with_data else 0
                 hrv_rows = [r["hrv_average"] for r in sleep_rows if r["hrv_average"]]
                 avg_hrv = round(sum(hrv_rows) / len(hrv_rows)) if hrv_rows else None
                 hrv_str = f", avg HRV {avg_hrv} ms" if avg_hrv else ""
@@ -155,8 +156,8 @@ class CoachService:
             for r in sleep_rows:
                 score_str = f"{r['sleep_score']}/100" if r["sleep_score"] is not None else "no score"
                 hours_str = f"{r['hours']} hrs" if r["hours"] else ""
-                hrv_str = f", HRV {r['hrv_average']:.0f} ms" if r["hrv_average"] else ""
-                rhr_str = f", RHR {r['resting_hr']:.0f} bpm" if r["resting_hr"] else ""
+                hrv_str = f", HRV {int(r['hrv_average'])} ms" if r["hrv_average"] is not None else ""
+                rhr_str = f", RHR {int(r['resting_hr'])} bpm" if r["resting_hr"] is not None else ""
                 context_parts.append(
                     f"- {r['date']}: {score_str}, {hours_str}{hrv_str}{rhr_str}"
                 )
@@ -184,10 +185,11 @@ class CoachService:
             if d["avg_steps"] is not None:
                 context_parts.append(f"- Average daily steps: {d['avg_steps']:,.0f}")
             if d["avg_battery_high"] is not None:
+                low_str = f"{d['avg_battery_low']:.0f}" if d["avg_battery_low"] is not None else "N/A"
                 context_parts.append(
-                    f"- Average Body Battery: high {d['avg_battery_high']:.0f}, low {d['avg_battery_low']:.0f} /100"
+                    f"- Average Body Battery: high {d['avg_battery_high']:.0f}, low {low_str} /100"
                 )
-                if d["avg_battery_low"] and d["avg_battery_low"] < 20:
+                if d["avg_battery_low"] is not None and d["avg_battery_low"] < 20:
                     context_parts.append(
                         "  ⚠ Body Battery regularly draining very low — potential cumulative fatigue"
                     )
@@ -220,10 +222,12 @@ class CoachService:
             context_parts.append("\n## Strength: All-Time Personal Records")
             context_parts.append("(Use these for any 'what's my max?' questions)")
             for pr in all_time_prs:
+                if pr["max_weight_lbs"] is None:
+                    continue
                 reps_str = f" x {pr['reps_at_max']} reps" if pr["reps_at_max"] else ""
+                e1rm_str = f" (est. 1RM: {pr['estimated_1rm_lbs']:.1f} lbs)" if pr["estimated_1rm_lbs"] is not None else ""
                 context_parts.append(
-                    f"- {pr['exercise_name']}: {pr['max_weight_lbs']:.1f} lbs{reps_str}"
-                    f" (est. 1RM: {pr['estimated_1rm_lbs']:.1f} lbs)"
+                    f"- {pr['exercise_name']}: {pr['max_weight_lbs']:.1f} lbs{reps_str}{e1rm_str}"
                 )
             summary["strength_exercises_all_time"] = len(all_time_prs)
 
@@ -249,12 +253,15 @@ class CoachService:
             context_parts.append(f"\n## Strength: Recent Work ({start_date} to {today})")
             current_date = None
             for r in recent_strength:
+                if r["max_weight_lbs"] is None:
+                    continue
                 if r["date"] != current_date:
                     current_date = r["date"]
                     context_parts.append(f"\n{current_date}:")
+                reps_str = f" x {r['max_reps']} reps" if r["max_reps"] is not None else ""
                 context_parts.append(
                     f"  - {r['exercise_name']}: {r['max_weight_lbs']:.1f} lbs"
-                    f" x {r['max_reps']} reps ({r['sets']} sets)"
+                    f"{reps_str} ({r['sets']} sets)"
                 )
 
         # ── 6. Cycling summary (if applicable) ───────────────────────────────
@@ -286,9 +293,10 @@ class CoachService:
                 except Exception:
                     pass
                 avg_power = raw.get("avgPower") or raw.get("averagePower")
-                power_str = f", avg power {avg_power:.0f} W" if avg_power else ""
+                power_str = f", avg power {int(avg_power)} W" if avg_power else ""
+                minutes_str = f"{ride['minutes']:.0f} min" if ride["minutes"] is not None else "? min"
                 context_parts.append(
-                    f"- {ride['date']}: {ride['name']} — {ride['minutes']:.0f} min{power_str}"
+                    f"- {ride['date']}: {ride['name']} — {minutes_str}{power_str}"
                 )
                 if avg_power:
                     power_rides.append(avg_power)
@@ -296,29 +304,27 @@ class CoachService:
             if power_rides:
                 # Simple FTP estimate: best 20-min average power × 0.95
                 # Here we just note the best avg power seen across rides as a proxy
-                best_avg = max(power_rides)
+                best_avg = max(float(p) for p in power_rides)
                 ftp_estimate = round(best_avg * 0.95)
                 context_parts.append(
                     f"\nEstimated FTP (rough): ~{ftp_estimate} W "
-                    f"(based on best avg power of {best_avg:.0f} W)"
+                    f"(based on best avg power of {int(best_avg)} W)"
                 )
 
         context_text = "\n".join(context_parts)
         return context_text, summary
 
-    async def chat(self, message: str, context_days: int = 30) -> tuple[str, dict]:
+    async def chat(self, message: str, context_text: str) -> str:
         """
         Send a message to the AI coach and get a response.
 
         Args:
             message: User's question or message
-            context_days: Number of days of data to include in context
+            context_text: Pre-built fitness context string
 
         Returns:
-            Tuple of (response_text, context_summary)
+            The AI response text
         """
-        context_text, summary = self.build_fitness_context(context_days)
-
         full_message = f"""Here is my recent fitness data:
 
 {context_text}
@@ -327,26 +333,17 @@ class CoachService:
 
 My question: {message}"""
 
-        try:
-            response = await self.client.messages.create(
-                model="claude-sonnet-4-6",
-                max_tokens=2048,
-                system=SYSTEM_PROMPT,
-                messages=[
-                    {"role": "user", "content": full_message}
-                ],
-                timeout=60,
-            )
+        response = await self.client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=2048,
+            system=SYSTEM_PROMPT,
+            messages=[
+                {"role": "user", "content": full_message}
+            ],
+            timeout=60,
+        )
 
-            response_text = response.content[0].text
-            return response_text, summary
-
-        except anthropic.APIError as e:
-            logger.error(f"Anthropic API error: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"Chat error: {e}")
-            raise
+        return response.content[0].text
 
 
 # Singleton instance

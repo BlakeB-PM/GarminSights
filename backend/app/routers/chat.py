@@ -40,10 +40,24 @@ async def chat(request: ChatRequest):
     _check_chat_rate_limit()
     coach = get_coach_service()
 
+    # Build fitness context first — separate from the API call so errors
+    # are clearly attributed.
     try:
-        response_text, context_summary = await coach.chat(
+        context_text, context_summary = coach.build_fitness_context(
+            request.context_days
+        )
+    except Exception as e:
+        logger.exception("Failed to build fitness context: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to load fitness data: {e}"
+        )
+
+    # Call the Anthropic API
+    try:
+        response_text = await coach.chat(
             message=request.message,
-            context_days=request.context_days
+            context_text=context_text,
         )
 
         return ChatResponse(
@@ -72,7 +86,7 @@ async def chat(request: ChatRequest):
         logger.exception("Chat error: %s", e)
         raise HTTPException(
             status_code=500,
-            detail="Chat request failed. Please try again."
+            detail=f"Chat request failed: {e}"
         )
 
 
