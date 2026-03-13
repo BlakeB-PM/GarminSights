@@ -1,0 +1,156 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Dark background gradient -->
+    <radialGradient id="bgGrad" cx="40%" cy="35%" r="70%">
+      <stop offset="0%" stop-color="#1e2a4a"/>
+      <stop offset="60%" stop-color="#0d1528"/>
+      <stop offset="100%" stop-color="#080e1c"/>
+    </radialGradient>
+    <!-- Teal glow filter -->
+    <filter id="tealGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <!-- Orange glow filter -->
+    <filter id="orangeGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <!-- Soft glow for neon lines -->
+    <filter id="neonGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <!-- Circle clip -->
+    <clipPath id="circleClip">
+      <circle cx="256" cy="256" r="248"/>
+    </clipPath>
+    <!-- Metallic border gradient -->
+    <linearGradient id="borderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8a8a9a"/>
+      <stop offset="30%" stop-color="#c8c8d8"/>
+      <stop offset="60%" stop-color="#6a6a7a"/>
+      <stop offset="100%" stop-color="#a8a8b8"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Metallic outer ring -->
+  <circle cx="256" cy="256" r="254" fill="url(#borderGrad)"/>
+  <circle cx="256" cy="256" r="249" fill="#0d1528"/>
+
+  <!-- Clipped content group -->
+  <g clip-path="url(#circleClip)">
+    <!-- Background -->
+    <circle cx="256" cy="256" r="248" fill="url(#bgGrad)"/>
+
+    <!-- Diagonal teal geometric block (upper-left) -->
+    <polygon points="0,0 320,0 60,512 0,512" fill="#00838f" opacity="0.55"/>
+    <!-- Lighter teal highlight on upper left -->
+    <polygon points="0,0 200,0 20,300 0,200" fill="#00bcd4" opacity="0.35"/>
+
+    <!-- Orange diagonal band (center) -->
+    <polygon points="210,0 320,0 370,512 260,512" fill="#e65100" opacity="0.50"/>
+    <polygon points="230,0 305,0 355,512 280,512" fill="#ff6d00" opacity="0.40"/>
+
+    <!-- Purple/violet block (lower-right) -->
+    <polygon points="300,0 512,0 512,512 240,512" fill="#4a0072" opacity="0.60"/>
+    <polygon points="350,0 512,0 512,512 290,512" fill="#6a1b9a" opacity="0.45"/>
+
+    <!-- Deep shadow overlay to unify and darken -->
+    <circle cx="256" cy="256" r="248" fill="radial-gradient(circle, transparent 30%, rgba(0,0,0,0.4) 100%)" opacity="0"/>
+    <radialGradient id="vignette" cx="50%" cy="50%" r="50%">
+      <stop offset="40%" stop-color="transparent"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0.6)"/>
+    </radialGradient>
+    <circle cx="256" cy="256" r="248" fill="url(#vignette)" opacity="0.7"/>
+
+    <!-- === CHART / ZIGZAG LINE === -->
+    <!-- Glow layer (wide, soft) -->
+    <polyline points="70,340 145,235 195,300 270,175 365,80"
+      fill="none" stroke="#00e5ff" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"
+      opacity="0.18" filter="url(#neonGlow)"/>
+    <!-- Glow layer (medium) -->
+    <polyline points="70,340 145,235 195,300 270,175 365,80"
+      fill="none" stroke="#00e5ff" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"
+      opacity="0.35" filter="url(#tealGlow)"/>
+    <!-- Main teal/orange zigzag line -->
+    <polyline points="70,340 145,235 195,300 270,175"
+      fill="none" stroke="#ff6d00" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"
+      filter="url(#orangeGlow)"/>
+    <polyline points="270,175 365,80"
+      fill="none" stroke="#00e5ff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"
+      filter="url(#tealGlow)"/>
+    <!-- Bright core -->
+    <polyline points="70,340 145,235 195,300 270,175 365,80"
+      fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
+      opacity="0.6"/>
+
+    <!-- === UPWARD ARROW === -->
+    <!-- Arrow shaft glow -->
+    <line x1="270" y1="175" x2="390" y2="55"
+      stroke="#80deea" stroke-width="20" stroke-linecap="round" opacity="0.20" filter="url(#neonGlow)"/>
+    <!-- Arrow shaft -->
+    <line x1="270" y1="175" x2="385" y2="60"
+      stroke="#b2ebf2" stroke-width="10" stroke-linecap="round" filter="url(#tealGlow)"/>
+    <!-- Arrow head -->
+    <polygon points="395,45 360,70 385,95" fill="#b2ebf2" filter="url(#tealGlow)"/>
+    <!-- Arrow core highlight -->
+    <line x1="272" y1="173" x2="384" y2="62"
+      stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+
+    <!-- === RUNNING FIGURE === -->
+    <!-- Head (teal circle) -->
+    <circle cx="330" cy="148" r="26" fill="#00838f" filter="url(#tealGlow)"/>
+    <circle cx="330" cy="148" r="22" fill="#00acc1"/>
+    <circle cx="325" cy="143" r="8" fill="#006064" opacity="0.6"/>
+
+    <!-- Body glow -->
+    <g opacity="0.6" filter="url(#neonGlow)">
+      <!-- Torso -->
+      <line x1="330" y1="174" x2="298" y2="255" stroke="#e040fb" stroke-width="18" stroke-linecap="round"/>
+    </g>
+    <!-- Body main -->
+    <g filter="url(#orangeGlow)">
+      <!-- Torso -->
+      <line x1="330" y1="174" x2="298" y2="255" stroke="#ce93d8" stroke-width="10" stroke-linecap="round"/>
+      <!-- Right arm (forward, upper) -->
+      <line x1="318" y1="200" x2="380" y2="182" stroke="#ce93d8" stroke-width="9" stroke-linecap="round"/>
+      <!-- Left arm (back) -->
+      <line x1="318" y1="200" x2="268" y2="222" stroke="#ce93d8" stroke-width="9" stroke-linecap="round"/>
+      <!-- Right leg (back/up) -->
+      <line x1="298" y1="255" x2="358" y2="310" stroke="#ce93d8" stroke-width="10" stroke-linecap="round"/>
+      <!-- Right lower leg -->
+      <line x1="358" y1="310" x2="375" y2="375" stroke="#ce93d8" stroke-width="10" stroke-linecap="round"/>
+      <!-- Left leg (forward/down) -->
+      <line x1="298" y1="255" x2="235" y2="332" stroke="#ce93d8" stroke-width="10" stroke-linecap="round"/>
+      <!-- Left lower leg -->
+      <line x1="235" y1="332" x2="200" y2="400" stroke="#ce93d8" stroke-width="10" stroke-linecap="round"/>
+    </g>
+
+    <!-- Body highlight/core -->
+    <g opacity="0.7">
+      <line x1="330" y1="174" x2="298" y2="255" stroke="#f3e5f5" stroke-width="3" stroke-linecap="round"/>
+      <line x1="318" y1="200" x2="380" y2="182" stroke="#f3e5f5" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="318" y1="200" x2="268" y2="222" stroke="#f3e5f5" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="298" y1="255" x2="358" y2="310" stroke="#f3e5f5" stroke-width="3" stroke-linecap="round"/>
+      <line x1="358" y1="310" x2="375" y2="375" stroke="#f3e5f5" stroke-width="3" stroke-linecap="round"/>
+      <line x1="298" y1="255" x2="235" y2="332" stroke="#f3e5f5" stroke-width="3" stroke-linecap="round"/>
+      <line x1="235" y1="332" x2="200" y2="400" stroke="#f3e5f5" stroke-width="3" stroke-linecap="round"/>
+    </g>
+  </g>
+
+  <!-- Metallic inner border highlight -->
+  <circle cx="256" cy="256" r="249" fill="none" stroke="rgba(200,210,230,0.3)" stroke-width="2"/>
+  <circle cx="256" cy="256" r="246" fill="none" stroke="rgba(100,120,160,0.2)" stroke-width="1"/>
+</svg>
