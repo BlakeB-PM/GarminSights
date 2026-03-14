@@ -8,6 +8,80 @@ import { cn } from '../lib/utils';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+/**
+ * Preprocesses markdown content to fix tables that have been flattened onto
+ * a single line (row boundaries lost). Detects the separator row to determine
+ * column count, then splits the flat pipe-delimited text into proper rows.
+ */
+function preprocessMarkdown(content: string): string {
+  if (!content.includes('|')) return content;
+
+  const lines = content.split('\n');
+  const out: string[] = [];
+
+  for (let idx = 0; idx < lines.length; idx++) {
+    const trimmed = lines[idx].trim();
+
+    // Only process lines that start and end with pipe and contain a separator
+    if (
+      !trimmed.startsWith('|') ||
+      !trimmed.endsWith('|') ||
+      !/\|[\s]*[-:]+[\s]*\|/.test(trimmed)
+    ) {
+      out.push(lines[idx]);
+      continue;
+    }
+
+    // Find the separator portion to learn the column count.
+    // Separator row looks like: |---|---|---| or |:---:|---:|
+    const sepRegex = /\|(?:[\s]*[-:]+[\s]*\|)+/g;
+    const sepMatches = trimmed.match(sepRegex);
+    if (!sepMatches) {
+      out.push(lines[idx]);
+      continue;
+    }
+    const separator = sepMatches.reduce((a, b) => (a.length >= b.length ? a : b));
+    const colCount = (separator.match(/\|/g) || []).length - 1;
+    if (colCount < 2) {
+      out.push(lines[idx]);
+      continue;
+    }
+
+    // Each table row has (colCount + 1) pipe characters.
+    const pipePositions: number[] = [];
+    for (let i = 0; i < trimmed.length; i++) {
+      if (trimmed[i] === '|') pipePositions.push(i);
+    }
+
+    const pipesPerRow = colCount + 1;
+    if (pipePositions.length <= pipesPerRow) {
+      // Already a single row — nothing to split.
+      out.push(lines[idx]);
+      continue;
+    }
+
+    // Split into individual rows.
+    const rows: string[] = [];
+    for (let i = 0; i + pipesPerRow <= pipePositions.length; i += pipesPerRow) {
+      const start = pipePositions[i];
+      const end = pipePositions[i + pipesPerRow - 1];
+      rows.push(trimmed.substring(start, end + 1));
+    }
+
+    if (rows.length >= 2) {
+      // Ensure a blank line before the table so the parser treats it as a block.
+      if (out.length > 0 && out[out.length - 1].trim() !== '') {
+        out.push('');
+      }
+      out.push(...rows);
+    } else {
+      out.push(lines[idx]);
+    }
+  }
+
+  return out.join('\n');
+}
+
 interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -116,7 +190,7 @@ export function Coach({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
   };
 
   return (
-    <div className="h-[calc(100vh-2rem)] flex flex-col animate-fade-in">
+    <div className="h-[calc(100vh-1rem)] sm:h-[calc(100vh-2rem)] flex flex-col animate-fade-in -mx-1 sm:mx-0">
       <Header
         title="AI Coach"
         subtitle="Your personal fitness advisor powered by your data"
@@ -135,7 +209,7 @@ export function Coach({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
       {/* Chat Container */}
       <Card className="flex-1 flex flex-col min-h-0 overflow-hidden">
         {/* Messages Area */}
-        <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-4">
+        <div className="flex-1 overflow-y-auto p-2 sm:p-6 space-y-4">
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center">
               <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-accent to-accent-dark flex items-center justify-center mb-4">
@@ -191,7 +265,7 @@ export function Coach({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
                   {/* Message Bubble */}
                   <div
                     className={cn(
-                      'min-w-0 rounded-2xl px-3 py-3 sm:px-4 group relative',
+                      'min-w-0 rounded-2xl px-2 py-2 sm:px-4 sm:py-3 group relative',
                       message.role === 'user'
                         ? 'max-w-[85%] sm:max-w-[75%] bg-accent text-white rounded-tr-none'
                         : 'w-full bg-card border border-card-border rounded-tl-none'
@@ -216,12 +290,12 @@ export function Coach({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
                           remarkPlugins={[remarkGfm]}
                           components={{
                             table: ({ children }) => (
-                              <div className="overflow-x-auto -mx-1">
-                                <table>{children}</table>
+                              <div className="overflow-x-auto my-3 -mx-1">
+                                <table className="min-w-full">{children}</table>
                               </div>
                             ),
                           }}
-                        >{message.content}</ReactMarkdown>
+                        >{preprocessMarkdown(message.content)}</ReactMarkdown>
                       </div>
                     ) : (
                       <p className="text-sm sm:text-base">{message.content}</p>
