@@ -9,9 +9,46 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 /**
- * Preprocesses markdown content to fix tables that have been flattened onto
- * a single line (row boundaries lost). Detects the separator row to determine
- * column count, then splits the flat pipe-delimited text into proper rows.
+ * Splits a string of concatenated pipe-delimited table rows into individual rows.
+ * Uses the separator row (|---|---|) to determine column count, then splits by
+ * counting pipes-per-row.  Returns null if no valid table is detected.
+ */
+function splitTableRows(tableText: string): string[] | null {
+  // Find the separator portion to determine column count.
+  const sepRegex = /\|(?:[\s]*[-:]+[\s]*\|)+/g;
+  const sepMatches = tableText.match(sepRegex);
+  if (!sepMatches) return null;
+
+  const separator = sepMatches.reduce((a, b) => (a.length >= b.length ? a : b));
+  const colCount = (separator.match(/\|/g) || []).length - 1;
+  if (colCount < 2) return null;
+
+  const pipePositions: number[] = [];
+  for (let i = 0; i < tableText.length; i++) {
+    if (tableText[i] === '|') pipePositions.push(i);
+  }
+
+  const pipesPerRow = colCount + 1;
+  if (pipePositions.length < pipesPerRow * 2) return null; // Need at least 2 rows
+
+  const rows: string[] = [];
+  for (let i = 0; i + pipesPerRow <= pipePositions.length; i += pipesPerRow) {
+    const start = pipePositions[i];
+    const end = pipePositions[i + pipesPerRow - 1];
+    rows.push(tableText.substring(start, end + 1));
+  }
+  return rows.length >= 2 ? rows : null;
+}
+
+/**
+ * Preprocesses markdown so that pipe-delimited tables always have each row on
+ * its own line with a blank line before the header — the format remark-gfm needs.
+ *
+ * Handles:
+ *  - Entire table flattened onto one line
+ *  - Table embedded after paragraph text on the same line
+ *  - Header on its own line but separator+data rows concatenated
+ *  - Already-correct tables (no-op)
  */
 function preprocessMarkdown(content: string): string {
   if (!content.includes('|')) return content;
@@ -19,67 +56,70 @@ function preprocessMarkdown(content: string): string {
   const lines = content.split('\n');
   const out: string[] = [];
 
-  for (let idx = 0; idx < lines.length; idx++) {
-    const trimmed = lines[idx].trim();
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
 
-    // Only process lines that start and end with pipe and contain a separator
-    if (
-      !trimmed.startsWith('|') ||
-      !trimmed.endsWith('|') ||
-      !/\|[\s]*[-:]+[\s]*\|/.test(trimmed)
-    ) {
-      out.push(lines[idx]);
+    // Skip lines without a table separator pattern — nothing to fix.
+    if (!/\|[\s]*[-:]+[\s]*\|/.test(trimmed)) {
+      out.push(lines[i]);
       continue;
     }
 
-    // Find the separator portion to learn the column count.
-    // Separator row looks like: |---|---|---| or |:---:|---:|
-    const sepRegex = /\|(?:[\s]*[-:]+[\s]*\|)+/g;
-    const sepMatches = trimmed.match(sepRegex);
-    if (!sepMatches) {
-      out.push(lines[idx]);
-      continue;
-    }
-    const separator = sepMatches.reduce((a, b) => (a.length >= b.length ? a : b));
-    const colCount = (separator.match(/\|/g) || []).length - 1;
-    if (colCount < 2) {
-      out.push(lines[idx]);
-      continue;
-    }
+    // Locate the first pipe to separate any leading prose from the table.
+    const firstPipe = trimmed.indexOf('|');
+    const prefix = trimmed.substring(0, firstPipe).trim();
+    const tableText = trimmed.substring(firstPipe);
 
-    // Each table row has (colCount + 1) pipe characters.
-    const pipePositions: number[] = [];
-    for (let i = 0; i < trimmed.length; i++) {
-      if (trimmed[i] === '|') pipePositions.push(i);
-    }
-
-    const pipesPerRow = colCount + 1;
-    if (pipePositions.length <= pipesPerRow) {
-      // Already a single row — nothing to split.
-      out.push(lines[idx]);
+    const rows = splitTableRows(tableText);
+    if (!rows) {
+      // Line has a separator-like pattern but couldn't be split into rows.
+      // It might be a single separator row for a table whose header is on the
+      // previous line.  Check the *next* line for concatenated data rows.
+      out.push(lines[i]);
       continue;
     }
 
-    // Split into individual rows.
-    const rows: string[] = [];
-    for (let i = 0; i + pipesPerRow <= pipePositions.length; i += pipesPerRow) {
-      const start = pipePositions[i];
-      const end = pipePositions[i + pipesPerRow - 1];
-      rows.push(trimmed.substring(start, end + 1));
-    }
-
-    if (rows.length >= 2) {
-      // Ensure a blank line before the table so the parser treats it as a block.
-      if (out.length > 0 && out[out.length - 1].trim() !== '') {
+    // Emit any prose prefix as its own paragraph.
+    if (prefix) {
+      out.push(prefix);
+      out.push('');
+    } else {
+      // Ensure a blank line before the table UNLESS the previous output line
+      // is already a table row (e.g. the header was on its own line).
+      const prev = out.length > 0 ? out[out.length - 1].trim() : '';
+      const prevIsTableRow = prev.startsWith('|') && prev.endsWith('|');
+      if (out.length > 0 && prev !== '' && !prevIsTableRow) {
         out.push('');
       }
-      out.push(...rows);
-    } else {
-      out.push(lines[idx]);
     }
+
+    out.push(...rows);
   }
 
-  return out.join('\n');
+  // Second pass: merge a standalone header row with the table rows that follow.
+  // If we have:
+  //   | Header1 | Header2 |   <-- single row, no separator
+  //   (blank line)
+  //   |---------|---------|   <-- separator (from split above)
+  //   | data ...
+  // Remove the blank line so they form a contiguous table.
+  const merged: string[] = [];
+  for (let i = 0; i < out.length; i++) {
+    if (
+      out[i].trim() === '' &&
+      i > 0 &&
+      i < out.length - 1 &&
+      out[i - 1].trim().startsWith('|') &&
+      out[i - 1].trim().endsWith('|') &&
+      /^\|[\s]*[-:]/.test(out[i + 1].trim())
+    ) {
+      // Drop the blank line between a header row and its separator.
+      continue;
+    }
+    merged.push(out[i]);
+  }
+
+  return merged.join('\n');
 }
 
 interface Message {
