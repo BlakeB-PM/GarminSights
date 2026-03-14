@@ -194,7 +194,7 @@ export function Coach({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
                       'min-w-0 rounded-2xl px-3 py-3 sm:px-4 group relative',
                       message.role === 'user'
                         ? 'max-w-[85%] sm:max-w-[75%] bg-accent text-white rounded-tr-none'
-                        : 'w-full sm:max-w-[90%] bg-card border border-card-border rounded-tl-none'
+                        : 'w-full bg-card border border-card-border rounded-tl-none'
                     )}
                   >
                     {message.role === 'assistant' ? (
@@ -212,9 +212,16 @@ export function Coach({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
                         [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:text-gray-300 [&_th]:font-semibold [&_th]:border [&_th]:border-card-border
                         [&_td]:px-3 [&_td]:py-1.5 [&_td]:text-gray-200 [&_td]:border [&_td]:border-card-border
                         [&_tr:nth-child(even)]:bg-background/50">
-                        <div className="overflow-x-auto">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
-                        </div>
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            table: ({ children }) => (
+                              <div className="overflow-x-auto -mx-1">
+                                <table>{children}</table>
+                              </div>
+                            ),
+                          }}
+                        >{message.content}</ReactMarkdown>
                       </div>
                     ) : (
                       <p className="text-sm sm:text-base">{message.content}</p>
