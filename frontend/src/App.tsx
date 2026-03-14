@@ -126,10 +126,12 @@ function AppLayout() {
             <Route path="/activities" element={<ActivityLog {...menuToggleProps} />} />
             <Route path="/strength" element={<StrengthAnalytics {...menuToggleProps} />} />
             <Route path="/cycling" element={<CyclingAnalytics {...menuToggleProps} />} />
-            <Route path="/coach" element={<Coach {...menuToggleProps} />} />
             <Route path="/settings" element={<Settings {...menuToggleProps} />} />
           </Routes>
         </div>
+        <Routes>
+          <Route path="/coach" element={<Coach {...menuToggleProps} />} />
+        </Routes>
       </main>
     </div>
   );
