@@ -7,7 +7,6 @@ import { ActivityBreakdown } from '../components/dashboard/ActivityBreakdown';
 import { SleepStages } from '../components/dashboard/SleepStages';
 import { BodyBatteryTrend } from '../components/dashboard/BodyBatteryTrend';
 import { StressDistribution } from '../components/dashboard/StressDistribution';
-import { TrainingLoadCard } from '../components/dashboard/TrainingLoadCard';
 import { StrengthSummary } from '../components/dashboard/StrengthSummary';
 import { DateRangeSelector } from '../components/dashboard/DateRangeSelector';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '../components/ui/Card';
@@ -16,7 +15,6 @@ import {
   getDashboardSummary,
   getActivityHeatmap,
   getRecoveryStatus,
-  getTrainingLoad,
   getActivityBreakdown,
   getStressDistribution,
   getSleepData,
@@ -30,7 +28,6 @@ import {
   type DashboardSummary,
   type ActivityHeatmapDay,
   type RecoveryStatus,
-  type TrainingLoad,
   type ActivityBreakdown as ActivityBreakdownType,
   type StressDistribution as StressDistributionData,
   type SleepData,
@@ -76,7 +73,6 @@ export function Dashboard({ onMenuToggle }: { onMenuToggle?: () => void } = {}) 
   const [recovery, setRecovery] = useState<RecoveryStatus | null>(null);
   const [latestSleepSnapshot, setLatestSleepSnapshot] = useState<SleepData | null>(null);
   const [latestDailySnapshot, setLatestDailySnapshot] = useState<DailyData | null>(null);
-  const [trainingLoad, setTrainingLoad] = useState<TrainingLoad | null>(null);
   const [lastSynced, setLastSynced] = useState<string | null>(null);
   const [snapshotLoading, setSnapshotLoading] = useState(true);
 
@@ -99,19 +95,17 @@ export function Dashboard({ onMenuToggle }: { onMenuToggle?: () => void } = {}) 
     async function loadSnapshot() {
       setSnapshotLoading(true);
       try {
-        const [recoveryData, latestSleepData, latestDailyData, syncStatusData, trainingLoadData] =
+        const [recoveryData, latestSleepData, latestDailyData, syncStatusData] =
           await Promise.all([
             getRecoveryStatus().catch(() => null),
             getLatestSleep().catch(() => null),
             getLatestDaily().catch(() => null),
             getSyncStatus().catch(() => null),
-            getTrainingLoad().catch(() => null),
           ]);
         setRecovery(recoveryData);
         setLatestSleepSnapshot(latestSleepData);
         setLatestDailySnapshot(latestDailyData);
         setLastSynced(syncStatusData?.last_synced ?? null);
-        setTrainingLoad(trainingLoadData);
       } catch (err) {
         console.error('Failed to load snapshot data:', err);
       } finally {
@@ -275,21 +269,16 @@ export function Dashboard({ onMenuToggle }: { onMenuToggle?: () => void } = {}) 
           />
         </div>
 
-        {/* Training Load — spans full width under the snapshot cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {recovery && (
-            <RecoveryScore
-              recoveryScore={recovery.recovery_score}
-              status={recovery.status}
-              message={recovery.message}
-              trainingLoadRatio={trainingLoad?.load_ratio}
-              sleepAverage={recovery.details?.sleep_7day_avg ?? undefined}
-              bodyBattery={recovery.details?.body_battery}
-              stress={recovery.details?.stress_average}
-            />
-          )}
-          <TrainingLoadCard data={trainingLoad} loading={snapshotLoading} />
-        </div>
+        {recovery && (
+          <RecoveryScore
+            recoveryScore={recovery.recovery_score}
+            status={recovery.status}
+            message={recovery.message}
+            sleepAverage={recovery.details?.sleep_7day_avg ?? undefined}
+            bodyBattery={recovery.details?.body_battery}
+            stress={recovery.details?.stress_average}
+          />
+        )}
       </div>
 
       {/* ── Section 2: Date Range Selector ── */}
