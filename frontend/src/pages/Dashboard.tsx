@@ -212,7 +212,7 @@ export function Dashboard({ onMenuToggle }: { onMenuToggle?: () => void } = {}) 
   return (
     <div className="space-y-4 md:space-y-6 animate-fade-in">
       <Header
-        title="Command Center"
+        title="Dashboard"
         subtitle="Your fitness overview at a glance"
         onMenuToggle={onMenuToggle}
       />
