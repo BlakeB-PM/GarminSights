@@ -19,16 +19,27 @@ if ('serviceWorker' in navigator) {
 
 registerSW({
   immediate: true,
-  // Poll for a new service worker every 60 seconds. Without this, a
-  // standalone PWA only checks on navigation — so users who keep the app
-  // open never see updates until they manually relaunch.
   onRegisteredSW(_swUrl, registration) {
-    registration &&
-      setInterval(() => {
-        if (!registration.installing && navigator.onLine) {
-          registration.update();
-        }
-      }, 60 * 1000);
+    if (!registration) return;
+
+    const tryUpdate = () => {
+      if (!registration.installing && navigator.onLine) {
+        registration.update();
+      }
+    };
+
+    // Poll every 60 seconds for users who keep the app open continuously.
+    setInterval(tryUpdate, 60 * 1000);
+
+    // Check immediately when the app becomes visible again (e.g. user
+    // switches back from another app or tab). This is the most common
+    // case where a PWA misses an update.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') tryUpdate();
+    });
+
+    // Check when coming back online after being offline.
+    window.addEventListener('online', tryUpdate);
   },
 });
 
