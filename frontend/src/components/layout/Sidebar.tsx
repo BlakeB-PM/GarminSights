@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Bike,
+  Download,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
@@ -29,9 +30,10 @@ interface SidebarProps {
   onToggleCollapse?: () => void;
   isMobileOpen?: boolean;
   onMobileClose?: () => void;
+  onInstall?: () => void;
 }
 
-export function Sidebar({ onSync, isSyncing, isCollapsed = false, onToggleCollapse, isMobileOpen = false, onMobileClose }: SidebarProps) {
+export function Sidebar({ onSync, isSyncing, isCollapsed = false, onToggleCollapse, isMobileOpen = false, onMobileClose, onInstall }: SidebarProps) {
   return (
     <aside className={cn(
       "fixed left-0 top-0 h-full bg-card/50 backdrop-blur-sm border-r border-card-border flex flex-col z-40 transition-all duration-300",
@@ -90,6 +92,19 @@ export function Sidebar({ onSync, isSyncing, isCollapsed = false, onToggleCollap
 
       {/* Bottom Actions */}
       <div className="p-4 border-t border-card-border space-y-2">
+        {onInstall && (
+          <button
+            onClick={onInstall}
+            className={cn(
+              'sidebar-link w-full',
+              isCollapsed && !isMobileOpen && 'justify-center'
+            )}
+            title={isCollapsed && !isMobileOpen ? 'Install App' : undefined}
+          >
+            <Download className="w-5 h-5 flex-shrink-0" />
+            {(!isCollapsed || isMobileOpen) && <span>Install App</span>}
+          </button>
+        )}
         <button
           onClick={onSync}
           disabled={isSyncing}

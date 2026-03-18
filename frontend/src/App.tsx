@@ -21,11 +21,28 @@ const queryClient = new QueryClient({
   },
 });
 
+interface BeforeInstallPromptEvent extends Event {
+  prompt(): Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+}
+
 function AppLayout() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<{ status: SyncStatus; ts: number } | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => window.innerWidth < 1024);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+
+  // Capture the install prompt so we can trigger it from a button
+  useEffect(() => {
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e as BeforeInstallPromptEvent);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    window.addEventListener('appinstalled', () => setInstallPrompt(null));
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
 
   // Auto-collapse sidebar on smaller screens (landscape mobile)
   useEffect(() => {
@@ -68,6 +85,12 @@ function AppLayout() {
     }
   };
 
+  const handleInstall = async () => {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    setInstallPrompt(null);
+  };
+
   const menuToggleProps = { onMenuToggle: () => setIsMobileMenuOpen(true) };
 
   return (
@@ -79,6 +102,7 @@ function AppLayout() {
         onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
         isMobileOpen={isMobileMenuOpen}
         onMobileClose={() => setIsMobileMenuOpen(false)}
+        onInstall={installPrompt ? handleInstall : undefined}
       />
 
       {/* Mobile backdrop */}
