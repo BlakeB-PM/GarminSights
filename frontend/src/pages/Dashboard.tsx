@@ -83,6 +83,7 @@ export function Dashboard({ onMenuToggle }: { onMenuToggle?: () => void } = {}) 
   const [stressDistribution, setStressDistribution] = useState<StressDistributionData | null>(null);
   const [sleepData, setSleepData] = useState<SleepData[]>([]);
   const [latestDaily, setLatestDaily] = useState<DailyData | null>(null);
+  const [dailyData, setDailyData] = useState<DailyData[]>([]);
   const [bodyBatteryTrend, setBodyBatteryTrend] = useState<Array<{ date: string; value: number }>>([]);
   const [intensityMinutes, setIntensityMinutes] = useState<{ moderate: number; vigorous: number } | null>(null);
   const [trainingBalance, setTrainingBalance] = useState<TrainingBalanceData[]>([]);
@@ -155,6 +156,8 @@ export function Dashboard({ onMenuToggle }: { onMenuToggle?: () => void } = {}) 
         setBodyBatteryTrend(batteryTrendData);
         setTrainingBalance(trainingBalanceData || []);
         setSleepTrend(sleepTrendData || []);
+
+        setDailyData(dailyDataArray);
 
         if (dailyDataArray.length > 0) {
           const latest = dailyDataArray.find((d) => new Date(d.date) <= new Date(endDate)) || dailyDataArray[0];
@@ -356,7 +359,7 @@ export function Dashboard({ onMenuToggle }: { onMenuToggle?: () => void } = {}) 
           trendData={bodyBatteryTrend}
           loading={periodLoading}
         />
-        <StressDistribution data={stressDistribution} loading={periodLoading} />
+        <StressDistribution data={stressDistribution} dailyData={dailyData} loading={periodLoading} />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
