@@ -220,17 +220,17 @@ export function calculateLoadRatioStatus(ratio: number | null | undefined): {
 }
 
 /**
- * Map a stress category name to a Tailwind color class.
+ * Map a stress category name to a hex color value for use in charts and inline styles.
  */
 export function getStressCategoryColor(category: string): string {
   const map: Record<string, string> = {
-    rest: 'text-blue-400',
-    low: 'text-green-400',
-    medium: 'text-yellow-400',
-    high: 'text-red-400',
-    activity: 'text-purple-400',
+    rest: '#60a5fa',
+    low: '#34d399',
+    medium: '#fbbf24',
+    high: '#f87171',
+    activity: '#c084fc',
   };
-  return map[category.toLowerCase()] ?? 'text-gray-400';
+  return map[category.toLowerCase()] ?? '#9ca3af';
 }
 
 /**
