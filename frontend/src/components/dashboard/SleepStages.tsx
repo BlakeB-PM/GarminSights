@@ -1,6 +1,6 @@
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
 import { Moon } from 'lucide-react';
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { calculateSleepStagePercentages, formatDuration } from '../../lib/utils';
 import type { SleepData } from '../../lib/api';
 
@@ -168,7 +168,7 @@ export function SleepStages({ latestSleep, sleepData, loading }: SleepStagesProp
             <div className="h-48">
               <p className="text-sm text-gray-400 mb-2">7-Day Trend (hours)</p>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={trendData}>
+                <LineChart data={trendData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
                   <XAxis
                     dataKey="date"
@@ -184,11 +184,11 @@ export function SleepStages({ latestSleep, sleepData, loading }: SleepStagesProp
                     }}
                   />
                   <Legend />
-                  <Bar dataKey="deep" stackId="a" fill={STAGE_COLORS.deep} name="Deep" />
-                  <Bar dataKey="rem" stackId="a" fill={STAGE_COLORS.rem} name="REM" />
-                  <Bar dataKey="light" stackId="a" fill={STAGE_COLORS.light} name="Light" />
-                  <Bar dataKey="awake" stackId="a" fill={STAGE_COLORS.awake} name="Awake" />
-                </BarChart>
+                  <Line type="monotone" dataKey="deep" stroke={STAGE_COLORS.deep} name="Deep" dot={false} />
+                  <Line type="monotone" dataKey="rem" stroke={STAGE_COLORS.rem} name="REM" dot={false} />
+                  <Line type="monotone" dataKey="light" stroke={STAGE_COLORS.light} name="Light" dot={false} />
+                  <Line type="monotone" dataKey="awake" stroke={STAGE_COLORS.awake} name="Awake" dot={false} />
+                </LineChart>
               </ResponsiveContainer>
             </div>
           )}

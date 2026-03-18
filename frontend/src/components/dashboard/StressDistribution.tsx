@@ -1,15 +1,16 @@
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
 import { AlertCircle } from 'lucide-react';
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { getStressCategoryColor, formatDuration } from '../../lib/utils';
-import type { StressDistribution } from '../../lib/api';
+import type { StressDistribution, DailyData } from '../../lib/api';
 
 interface StressDistributionProps {
   data: StressDistribution | null;
+  dailyData?: DailyData[];
   loading?: boolean;
 }
 
-export function StressDistribution({ data, loading }: StressDistributionProps) {
+export function StressDistribution({ data, dailyData = [], loading }: StressDistributionProps) {
   if (loading) {
     return (
       <Card>
@@ -82,6 +83,17 @@ export function StressDistribution({ data, loading }: StressDistributionProps) {
   ].filter((item) => item.value > 0);
 
   const totalHours = data.total_seconds / 3600;
+
+  const trendData = [...dailyData]
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((day) => ({
+      date: new Date(day.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      low: (day.low_stress_duration || 0) / 60,
+      medium: (day.medium_stress_duration || 0) / 60,
+      high: (day.high_stress_duration || 0) / 60,
+      rest: (day.rest_stress_duration || 0) / 60,
+      activity: (day.activity_stress_duration || 0) / 60,
+    }));
 
   return (
     <Card>
@@ -156,6 +168,33 @@ export function StressDistribution({ data, loading }: StressDistributionProps) {
               );
             })}
           </div>
+
+          {/* Daily Trend */}
+          {trendData.length > 0 && (
+            <div className="h-48">
+              <p className="text-sm text-gray-400 mb-2">Daily Breakdown (minutes)</p>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={trendData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
+                  <XAxis dataKey="date" stroke="#6b7280" fontSize={10} />
+                  <YAxis stroke="#6b7280" fontSize={10} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#12121a',
+                      border: '1px solid #1e1e2e',
+                      borderRadius: '8px',
+                    }}
+                  />
+                  <Legend />
+                  <Line type="monotone" dataKey="low" stroke={getStressCategoryColor('low')} name="Low" dot={false} />
+                  <Line type="monotone" dataKey="medium" stroke={getStressCategoryColor('medium')} name="Medium" dot={false} />
+                  <Line type="monotone" dataKey="high" stroke={getStressCategoryColor('high')} name="High" dot={false} />
+                  <Line type="monotone" dataKey="rest" stroke={getStressCategoryColor('rest')} name="Rest" dot={false} />
+                  <Line type="monotone" dataKey="activity" stroke={getStressCategoryColor('activity')} name="Activity" dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
