@@ -107,13 +107,20 @@ if _static_dir.is_dir():
     # Serve static assets (JS, CSS, images)
     app.mount("/assets", StaticFiles(directory=_static_dir / "assets"), name="assets")
 
+    # Files that must never be cached so the browser always fetches the latest
+    # version. The service worker file is the key one: if the browser caches
+    # sw.js it will never detect that a new version has been deployed.
+    _NO_CACHE_HEADERS = {"Cache-Control": "no-cache, no-store, must-revalidate"}
+    _NO_CACHE_FILES = {"sw.js", "registerSW.js", "index.html"}
+
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
         """SPA catch-all — return index.html for non-API routes."""
         file_path = _static_dir / full_path
         if file_path.is_file():
-            return FileResponse(file_path)
-        return FileResponse(_static_dir / "index.html")
+            headers = _NO_CACHE_HEADERS if file_path.name in _NO_CACHE_FILES else None
+            return FileResponse(file_path, headers=headers)
+        return FileResponse(_static_dir / "index.html", headers=_NO_CACHE_HEADERS)
 else:
     @app.get("/")
     async def root():
