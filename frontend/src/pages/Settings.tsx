@@ -34,7 +34,10 @@ export function Settings({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
       const status = await checkAuthStatus();
       setAuthStatus(status);
     } catch (error) {
-      setAuthStatus({ authenticated: false, error: 'Backend not running. Start the server first.' });
+      setAuthStatus({
+        authenticated: false,
+        error: 'Could not reach the server. If it was idle it may still be starting — please wait a few seconds and retry.',
+      });
     } finally {
       setLoading(false);
     }

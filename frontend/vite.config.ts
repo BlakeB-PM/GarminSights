@@ -46,14 +46,15 @@ export default defineConfig(({ mode }) => {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
           navigateFallback: '/index.html',
           navigateFallbackDenylist: [/^\/api\//],
+          // Never intercept /api/* requests. Under fly.io's auto-stop the
+          // backend can take 15-30s to cold-start; a short SW timeout here
+          // aborts the fetch before the machine is ready and the user sees
+          // a spurious "backend not running" error. Let the browser's own
+          // fetch timeout (much longer) handle this instead.
           runtimeCaching: [
             {
               urlPattern: /^\/api\//,
-              handler: 'NetworkFirst',
-              options: {
-                cacheName: 'api-cache',
-                networkTimeoutSeconds: 10,
-              },
+              handler: 'NetworkOnly',
             },
           ],
         },
