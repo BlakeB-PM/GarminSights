@@ -19,9 +19,40 @@ const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
  * anticipation of cookie-based auth being added in the future — the backend
  * already has allow_credentials=True in its CORSMiddleware, so no server
  * changes would be needed at that point.
+ *
+ * On fly.io the backend auto-stops when idle and cold-starts on the first
+ * request.  During that ~15-30s window fetch can fail with a network error
+ * or fly's edge can return 502/503.  Retry transient failures with a short
+ * backoff so a cold start is invisible to the user — but only for idempotent
+ * methods, since POSTs (login, sync) must not be silently re-sent.
  */
+const COLD_START_RETRY_STATUSES = new Set([502, 503, 504]);
+
 async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
-  return fetch(url, { credentials: 'include', ...init });
+  const method = (init?.method ?? 'GET').toUpperCase();
+  const retriable = method === 'GET' || method === 'HEAD';
+  const maxAttempts = retriable ? 4 : 1;
+  const delays = [1000, 2000, 4000];
+
+  let lastError: unknown;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const response = await fetch(url, { credentials: 'include', ...init });
+      if (retriable && COLD_START_RETRY_STATUSES.has(response.status) && attempt < maxAttempts - 1) {
+        await new Promise((r) => setTimeout(r, delays[attempt]));
+        continue;
+      }
+      return response;
+    } catch (err) {
+      lastError = err;
+      if (attempt < maxAttempts - 1) {
+        await new Promise((r) => setTimeout(r, delays[attempt]));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastError;
 }
 
 async function handleResponse<T>(response: Response): Promise<T> {
