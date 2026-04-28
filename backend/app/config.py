@@ -39,8 +39,19 @@ class Settings(BaseSettings):
         # own type coercion runs.  Without this validator, pydantic would try
         # json.loads() on the value; if that fails it iterates the string
         # character-by-character, producing ['h','t','t','p','s',...].
+        import json as _json
         if isinstance(v, str):
-            origins = [origin.strip() for origin in v.split(",") if origin.strip()]
+            # Try JSON first so fly.toml values like '["https://a.com"]' parse
+            # into a proper list rather than being treated as one big string.
+            try:
+                parsed = _json.loads(v)
+                if isinstance(parsed, list):
+                    origins = [str(o).strip() for o in parsed if str(o).strip()]
+                else:
+                    origins = [v.strip()] if v.strip() else []
+            except _json.JSONDecodeError:
+                # Fall back to comma-separated: https://a.com,https://b.com
+                origins = [origin.strip() for origin in v.split(",") if origin.strip()]
         else:
             # Already a list (JSON-parsed env var or the field default).
             origins = list(v)  # type: ignore[arg-type]

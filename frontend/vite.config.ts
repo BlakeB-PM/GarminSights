@@ -45,15 +45,21 @@ export default defineConfig(({ mode }) => {
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
           navigateFallback: '/index.html',
-          navigateFallbackDenylist: [/^\/api\//],
+          // Use a pathname check so the denylist works for both relative (/api/...)
+          // and absolute (https://host/api/...) URLs that reach the SW.
+          navigateFallbackDenylist: [/\/api\//],
           // Never intercept /api/* requests. Under fly.io's auto-stop the
           // backend can take 15-30s to cold-start; a short SW timeout here
           // aborts the fetch before the machine is ready and the user sees
           // a spurious "backend not running" error. Let the browser's own
           // fetch timeout (much longer) handle this instead.
+          //
+          // The pattern uses a function so it matches on the URL pathname,
+          // not the full href — the SW sees absolute URLs even when the page
+          // used a relative path like /api/auth/status.
           runtimeCaching: [
             {
-              urlPattern: /^\/api\//,
+              urlPattern: ({ url }: { url: URL }) => url.pathname.startsWith('/api/'),
               handler: 'NetworkOnly',
             },
           ],

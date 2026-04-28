@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Header } from '../components/layout/Header';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -6,6 +6,9 @@ import { Input } from '../components/ui/Input';
 import { CheckCircle, XCircle, RefreshCw, Database, User, Key, Eye, EyeOff } from 'lucide-react';
 import { checkAuthStatus, login, logout, syncData, type AuthStatus, type SyncStatus } from '../lib/api';
 
+// Delays between auto-retries when the server is unreachable (cold start).
+// Total coverage: 10s + 20s + 30s = 60s after the initial ~7s retry window.
+const COLD_START_RETRY_DELAYS = [10_000, 20_000, 30_000];
 
 export function Settings({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
@@ -13,7 +16,8 @@ export function Settings({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [loggingIn, setLoggingIn] = useState(false);
-  
+  const [retryCountdown, setRetryCountdown] = useState<number | null>(null);
+
   // Credential inputs
   const [showCredentialForm, setShowCredentialForm] = useState(false);
   const [email, setEmail] = useState('');
@@ -24,20 +28,58 @@ export function Settings({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
   const [mfaCode, setMfaCode] = useState('');
   const [selectedDays, setSelectedDays] = useState<number>(30);
 
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const coldStartAttemptRef = useRef(0);
+
+  const clearRetryTimers = () => {
+    if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
+    if (countdownTimerRef.current) { clearInterval(countdownTimerRef.current); countdownTimerRef.current = null; }
+    setRetryCountdown(null);
+  };
+
   useEffect(() => {
     checkAuth();
+    return clearRetryTimers;
   }, []);
 
-  const checkAuth = async () => {
+  const scheduleAutoRetry = (delayMs: number) => {
+    clearRetryTimers();
+    let remaining = Math.round(delayMs / 1000);
+    setRetryCountdown(remaining);
+    countdownTimerRef.current = setInterval(() => {
+      remaining -= 1;
+      setRetryCountdown(remaining > 0 ? remaining : null);
+      if (remaining <= 0 && countdownTimerRef.current) {
+        clearInterval(countdownTimerRef.current);
+        countdownTimerRef.current = null;
+      }
+    }, 1000);
+    retryTimerRef.current = setTimeout(() => checkAuth(true), delayMs);
+  };
+
+  const checkAuth = async (isAutoRetry = false) => {
+    if (!isAutoRetry) {
+      coldStartAttemptRef.current = 0;
+      clearRetryTimers();
+    }
     setLoading(true);
     try {
       const status = await checkAuthStatus();
       setAuthStatus(status);
+      coldStartAttemptRef.current = 0;
+      clearRetryTimers();
     } catch (error) {
       setAuthStatus({
         authenticated: false,
         error: 'Could not reach the server. If it was idle it may still be starting — please wait a few seconds and retry.',
       });
+      // Auto-retry to survive Fly.io cold starts (machine can take 15-45s to start)
+      const attempt = coldStartAttemptRef.current;
+      if (attempt < COLD_START_RETRY_DELAYS.length) {
+        coldStartAttemptRef.current += 1;
+        scheduleAutoRetry(COLD_START_RETRY_DELAYS[attempt]);
+      }
     } finally {
       setLoading(false);
     }
@@ -91,7 +133,8 @@ export function Settings({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
       const status = await syncData(days);
       setSyncStatus(status);
     } catch (error) {
-      setSyncStatus({ success: false, error: 'Sync failed', activities_synced: 0, sleep_days_synced: 0, dailies_synced: 0, strength_sets_extracted: 0 });
+      const msg = error instanceof Error ? error.message : 'Network error';
+      setSyncStatus({ success: false, error: msg, activities_synced: 0, sleep_days_synced: 0, dailies_synced: 0, strength_sets_extracted: 0 });
     } finally {
       setSyncing(false);
     }
@@ -142,6 +185,11 @@ export function Settings({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
                         <p className="text-sm text-gray-500">
                           {authStatus?.error || 'Login to sync data'}
                         </p>
+                        {retryCountdown !== null && (
+                          <p className="text-xs text-accent mt-1">
+                            Retrying in {retryCountdown}s…
+                          </p>
+                        )}
                       </div>
                     </>
                   )}
@@ -152,18 +200,30 @@ export function Settings({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
                     Disconnect
                   </Button>
                 ) : (
-                  <Button 
-                    variant="secondary" 
-                    onClick={() => {
-                      setShowCredentialForm(!showCredentialForm);
-                      if (showCredentialForm) {
-                        setMfaToken(null);
-                        setMfaCode('');
-                      }
-                    }}
-                  >
-                    {showCredentialForm ? 'Hide' : 'Enter Credentials'}
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {authStatus?.error && (
+                      <Button
+                        variant="secondary"
+                        onClick={() => checkAuth()}
+                        disabled={loading || retryCountdown !== null}
+                        title="Retry connection"
+                      >
+                        <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                      </Button>
+                    )}
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        setShowCredentialForm(!showCredentialForm);
+                        if (showCredentialForm) {
+                          setMfaToken(null);
+                          setMfaCode('');
+                        }
+                      }}
+                    >
+                      {showCredentialForm ? 'Hide' : 'Enter Credentials'}
+                    </Button>
+                  </div>
                 )}
               </div>
               
