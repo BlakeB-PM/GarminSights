@@ -45,6 +45,7 @@ import {
 import { Activity, TrendingUp as TrendingUpIcon, ArrowUp, ArrowDown, Minus } from 'lucide-react';
 import { Drawer } from '../components/ui/Drawer';
 import { DrillDownContent } from '../components/strength/DrillDownContent';
+import { MuscleBalanceRadar } from '../components/strength/MuscleBalanceRadar';
 
 export function StrengthAnalytics({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
   const isMobile = useIsMobile();
@@ -1745,7 +1746,9 @@ export function StrengthAnalytics({ onMenuToggle }: { onMenuToggle?: () => void 
       <div className="space-y-6">
         <div>
           <h2 className="text-xl font-semibold mb-4 text-gray-100">Analysis</h2>
-          
+
+          <MuscleBalanceRadar />
+
               <Card className="mb-6">
             <CardHeader>
               <div className="flex items-start justify-between gap-4 mb-2">

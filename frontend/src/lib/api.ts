@@ -484,6 +484,11 @@ export interface MuscleComparisonData {
   muscle_groups: Record<string, number>;
 }
 
+export interface MuscleBalance {
+  muscle_group: string;
+  sets: number;
+}
+
 export interface DrillDownActivity {
   activity_id: number;
   activity_name: string;
@@ -558,6 +563,18 @@ export async function getTrainingFrequency(
     `${API_BASE}/api/strength/frequency?weeks=${weeks}&sort_by=${sortBy}`,
   );
   return handleResponse<MuscleFrequency[]>(response);
+}
+
+export async function getMuscleBalance(
+  days = 30,
+  primaryOnly = false,
+): Promise<MuscleBalance[]> {
+  const params = new URLSearchParams({
+    days: String(days),
+    primary_only: String(primaryOnly),
+  });
+  const response = await apiFetch(`${API_BASE}/api/strength/muscle-balance?${params}`);
+  return handleResponse<MuscleBalance[]>(response);
 }
 
 export async function getVolumeTrends(
