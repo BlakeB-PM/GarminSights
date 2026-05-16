@@ -7,9 +7,12 @@ from app.database import execute_query
 from app.models.schemas import (
     StrengthSet, ExerciseProgress, ExerciseList,
     KeyLiftCard, TrainingBalanceData, MuscleFrequency,
-    VolumeTrendData, MuscleComparisonData, DrillDownResponse, DrillDownActivity
+    VolumeTrendData, MuscleComparisonData, MuscleBalance,
+    DrillDownResponse, DrillDownActivity
 )
-from app.services.muscle_mapping import get_primary_muscle_group, get_all_muscle_groups
+from app.services.muscle_mapping import (
+    get_primary_muscle_group, get_all_muscle_groups, MUSCLE_GROUPS
+)
 
 router = APIRouter(prefix="/api/strength", tags=["strength"])
 
@@ -627,8 +630,53 @@ async def get_training_frequency(
         result.sort(key=lambda x: x.total_volume, reverse=True)
     elif sort_by == "alphabetical":
         result.sort(key=lambda x: x.muscle_group)
-    
+
     return result
+
+
+@router.get("/muscle-balance", response_model=list[MuscleBalance])
+async def get_muscle_balance(
+    days: int = Query(30, ge=1, le=730),
+    primary_only: bool = Query(False),
+):
+    """
+    Get total sets per muscle group within a time window.
+
+    When primary_only is True, each set is counted only against its exercise's
+    primary muscle group. Otherwise each set is counted against the primary
+    plus any secondary muscle groups, mirroring /frequency.
+
+    Returns one entry per muscle group in canonical MUSCLE_GROUPS order so the
+    radar chart shape is stable across requests.
+    """
+    start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+
+    rows = execute_query(
+        """
+        SELECT ss.exercise_name, COUNT(*) AS sets_count
+        FROM strength_sets ss
+        JOIN activities a ON ss.activity_id = a.id
+        WHERE a.start_time >= ?
+          AND ss.exercise_name IS NOT NULL
+          AND ss.weight_lbs > 0
+        GROUP BY ss.exercise_name
+        """,
+        (start_date,)
+    )
+
+    counts = {mg: 0 for mg in MUSCLE_GROUPS}
+    for row in rows:
+        exercise_name = row["exercise_name"]
+        if primary_only:
+            groups = [get_primary_muscle_group(exercise_name)]
+        else:
+            groups = get_all_muscle_groups(exercise_name)
+
+        for mg in groups:
+            if mg in counts:
+                counts[mg] += row["sets_count"]
+
+    return [MuscleBalance(muscle_group=mg, sets=counts[mg]) for mg in MUSCLE_GROUPS]
 
 
 @router.get("/volume-trends", response_model=list[VolumeTrendData])

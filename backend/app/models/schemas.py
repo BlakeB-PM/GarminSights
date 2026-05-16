@@ -348,6 +348,12 @@ class MuscleComparisonData(BaseModel):
     muscle_groups: dict[str, int] = {}  # muscle_group -> sets per week
 
 
+class MuscleBalance(BaseModel):
+    """Sets per muscle group within a single time window."""
+    muscle_group: str
+    sets: int = 0
+
+
 class DrillDownActivity(BaseModel):
     """Activity with sets for drill-down view."""
     activity_id: int
