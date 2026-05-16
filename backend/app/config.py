@@ -40,7 +40,22 @@ class Settings(BaseSettings):
         # json.loads() on the value; if that fails it iterates the string
         # character-by-character, producing ['h','t','t','p','s',...].
         if isinstance(v, str):
-            origins = [origin.strip() for origin in v.split(",") if origin.strip()]
+            import json as _json
+            stripped = v.strip()
+            # Handle JSON array format: '["https://..."]' (used in fly.toml)
+            if stripped.startswith("["):
+                try:
+                    parsed = _json.loads(stripped)
+                    if isinstance(parsed, list):
+                        origins = [str(o).strip() for o in parsed if str(o).strip()]
+                        # fall through to the wildcard check below
+                    else:
+                        origins = [stripped]
+                except _json.JSONDecodeError:
+                    origins = [origin.strip() for origin in v.split(",") if origin.strip()]
+            else:
+                # Comma-separated format: 'https://foo.com,https://bar.com'
+                origins = [origin.strip() for origin in v.split(",") if origin.strip()]
         else:
             # Already a list (JSON-parsed env var or the field default).
             origins = list(v)  # type: ignore[arg-type]
