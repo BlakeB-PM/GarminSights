@@ -146,25 +146,32 @@ export function Settings({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
                     </>
                   )}
                 </div>
-                
-                {authStatus?.authenticated ? (
-                  <Button variant="secondary" onClick={handleLogout}>
-                    Disconnect
-                  </Button>
-                ) : (
-                  <Button 
-                    variant="secondary" 
-                    onClick={() => {
-                      setShowCredentialForm(!showCredentialForm);
-                      if (showCredentialForm) {
-                        setMfaToken(null);
-                        setMfaCode('');
-                      }
-                    }}
-                  >
-                    {showCredentialForm ? 'Hide' : 'Enter Credentials'}
-                  </Button>
-                )}
+                <div className="flex items-center gap-2">
+                  {authStatus?.error && (
+                    <Button variant="secondary" onClick={checkAuth} disabled={loading}>
+                      <RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
+                      Retry
+                    </Button>
+                  )}
+                  {authStatus?.authenticated ? (
+                    <Button variant="secondary" onClick={handleLogout}>
+                      Disconnect
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        setShowCredentialForm(!showCredentialForm);
+                        if (showCredentialForm) {
+                          setMfaToken(null);
+                          setMfaCode('');
+                        }
+                      }}
+                    >
+                      {showCredentialForm ? 'Hide' : 'Enter Credentials'}
+                    </Button>
+                  )}
+                </div>
               </div>
               
               {/* Credential Form */}

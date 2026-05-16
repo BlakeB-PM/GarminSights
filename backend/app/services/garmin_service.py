@@ -210,23 +210,12 @@ class GarminService:
             return False
     
     def check_session(self) -> bool:
-        """Check if we have a valid session."""
-        if not self._load_session():
-            return False
-        
-        # If we loaded a username from the session file, verify client is actually working
-        if self._username and self._display_name and self._client:
-            # Try a simple API call to verify the session is still valid
-            try:
-                # Quick test - try to get full name (lightweight call that requires auth)
-                self._client.get_full_name()
-                logger.info(f"Session valid for user: {self._username}")
-                return True
-            except Exception as e:
-                logger.warning(f"Session check failed: {e}. Session may be expired.")
-                return False
-        
-        return False
+        """Check if we have a valid session (token files present and loadable).
+
+        Avoids a live Garmin API call so this stays fast; actual token validity
+        is verified lazily when data-fetching endpoints are called.
+        """
+        return self._load_session()
     
     def login(
         self,
