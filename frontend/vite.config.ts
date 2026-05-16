@@ -46,6 +46,14 @@ export default defineConfig(({ mode }) => {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
           navigateFallback: '/index.html',
           navigateFallbackDenylist: [/^\/api\//],
+          // Without skipWaiting/clientsClaim a freshly installed SW sits
+          // in "waiting" forever while the old SW keeps controlling every
+          // tab on this origin (incognito is the only escape). With them
+          // the new SW activates immediately, fires `controllerchange`,
+          // and main.tsx reloads the page so the user sees the new build.
+          skipWaiting: true,
+          clientsClaim: true,
+          cleanupOutdatedCaches: true,
           // Never intercept /api/* requests. Under fly.io's auto-stop the
           // backend can take 15-30s to cold-start; a short SW timeout here
           // aborts the fetch before the machine is ready and the user sees

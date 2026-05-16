@@ -4,11 +4,14 @@ import { registerSW } from 'virtual:pwa-register';
 import App from './App';
 import './index.css';
 
-// Reload the page when a new service worker takes control.
-// This listener must be registered before registerSW() to avoid a timing
-// race where the controllerchange event fires before workbox-window's own
-// listener is set up, causing the reload to be silently missed.
-if ('serviceWorker' in navigator) {
+// Reload the page when a NEW service worker takes control. We only want
+// this to fire on updates, not on the user's very first visit — on first
+// install there's no prior controller, and clientsClaim() would otherwise
+// cause an unwanted reload right after the initial page load.
+// Listener must be registered before registerSW() to avoid a timing race
+// where controllerchange fires before workbox-window's own listener is
+// set up, causing the reload to be silently missed.
+if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
   let reloading = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (reloading) return;
