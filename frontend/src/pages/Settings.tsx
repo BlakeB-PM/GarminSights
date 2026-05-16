@@ -3,11 +3,13 @@ import { Header } from '../components/layout/Header';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
-import { CheckCircle, XCircle, RefreshCw, Database, User, Key, Eye, EyeOff } from 'lucide-react';
+import { CheckCircle, XCircle, RefreshCw, Database, User, Key, Eye, EyeOff, Smartphone, Download } from 'lucide-react';
 import { checkAuthStatus, login, logout, syncData, type AuthStatus, type SyncStatus } from '../lib/api';
+import { usePWAInstall } from '../hooks/usePWAInstall';
 
 
 export function Settings({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
+  const { canInstall, installed, install } = usePWAInstall();
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -424,6 +426,61 @@ export function Settings({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
               </div>
             )}
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Install App */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Smartphone className="w-5 h-5 text-accent" />
+            Install App
+          </CardTitle>
+          <CardDescription>
+            Install GarminSights on your device for quick access and a full-screen experience
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {installed ? (
+            <div className="flex items-center gap-3 text-success">
+              <CheckCircle className="w-5 h-5" />
+              <p>GarminSights is running as an installed app</p>
+            </div>
+          ) : canInstall ? (
+            <div className="space-y-3">
+              <p className="text-sm text-gray-400">
+                Install GarminSights on your device for quick access, offline support, and a full-screen experience without browser chrome.
+              </p>
+              <Button onClick={install}>
+                <Download className="w-4 h-4 mr-2" />
+                Install GarminSights
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm text-gray-400">
+                Install GarminSights using your browser's built-in option:
+              </p>
+              <ul className="text-sm text-gray-500 space-y-1.5 list-disc list-inside">
+                <li>
+                  <span className="font-medium text-gray-400">Chrome / Edge:</span> click the install icon
+                  in the address bar, or open the menu → <em>Install GarminSights</em>
+                </li>
+                <li>
+                  <span className="font-medium text-gray-400">Safari on iOS:</span> tap the Share button
+                  → <em>Add to Home Screen</em>
+                </li>
+                <li>
+                  <span className="font-medium text-gray-400">Samsung Internet:</span> tap the menu
+                  → <em>Add page to</em> → <em>Home screen</em>
+                </li>
+              </ul>
+              <p className="text-xs text-gray-600">
+                If the install option is missing, try visiting the app a few times or check that your
+                browser is up to date.
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 

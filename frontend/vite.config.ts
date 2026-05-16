@@ -13,6 +13,7 @@ export default defineConfig(({ mode }) => {
         registerType: 'autoUpdate',
         includeAssets: ['icon.svg', 'icon-*.png'],
         manifest: {
+          id: '/',
           name: 'GarminSights',
           short_name: 'GarminSights',
           description: 'Personal fitness analytics dashboard powered by your Garmin data',
