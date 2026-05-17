@@ -3,9 +3,10 @@ import { Header } from '../components/layout/Header';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
-import { CheckCircle, XCircle, RefreshCw, Database, User, Key, Eye, EyeOff, Smartphone, Download } from 'lucide-react';
+import { CheckCircle, XCircle, RefreshCw, Database, User, Key, Eye, EyeOff, Smartphone, Download, Trash2 } from 'lucide-react';
 import { checkAuthStatus, login, logout, syncData, type AuthStatus, type SyncStatus } from '../lib/api';
 import { usePWAInstall } from '../hooks/usePWAInstall';
+import { resetPWAState } from '../lib/pwa';
 
 
 export function Settings({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
@@ -463,8 +464,12 @@ export function Settings({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
               </p>
               <ul className="text-sm text-gray-500 space-y-1.5 list-disc list-inside">
                 <li>
-                  <span className="font-medium text-gray-400">Chrome / Edge:</span> click the install icon
-                  in the address bar, or open the menu → <em>Install GarminSights</em>
+                  <span className="font-medium text-gray-400">Chrome on Android:</span> tap the three-dot
+                  menu → <em>Install app</em> (or <em>Add to Home screen</em> on older versions)
+                </li>
+                <li>
+                  <span className="font-medium text-gray-400">Chrome / Edge desktop:</span> click the install
+                  icon in the address bar, or open the menu → <em>Install GarminSights</em>
                 </li>
                 <li>
                   <span className="font-medium text-gray-400">Safari on iOS:</span> tap the Share button
@@ -475,10 +480,25 @@ export function Settings({ onMenuToggle }: { onMenuToggle?: () => void } = {}) {
                   → <em>Add page to</em> → <em>Home screen</em>
                 </li>
               </ul>
-              <p className="text-xs text-gray-600">
-                If the install option is missing, try visiting the app a few times or check that your
-                browser is up to date.
-              </p>
+              <div className="mt-3 p-3 bg-background rounded-lg border border-card-border space-y-2">
+                <p className="text-xs text-gray-400 font-medium">Install option still missing?</p>
+                <p className="text-xs text-gray-500">
+                  If you previously installed GarminSights, Chrome can hold on to a stale service worker that
+                  hides the install option. Reset the app data below, then reload the page from your browser
+                  (not the installed app) and re-open this menu.
+                </p>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    if (window.confirm('Reset GarminSights app data? This unregisters the service worker and clears the offline cache, then reloads the page. Your Garmin data is unaffected.')) {
+                      resetPWAState();
+                    }
+                  }}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Reset App Data
+                </Button>
+              </div>
             </div>
           )}
         </CardContent>
