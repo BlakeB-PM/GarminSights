@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     # Defaults to localhost for local development.
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
 
+    # Cloudflare Access — used to validate the Cf-Access-Jwt-Assertion header on
+    # the /mcp endpoint. When both values are empty the MCP endpoint is disabled.
+    # cf_access_team_domain: your team's <team>.cloudflareaccess.com hostname.
+    # cf_access_aud: the Application AUD tag for the GarminSights Access app.
+    cf_access_team_domain: str = ""
+    cf_access_aud: str = ""
+
 
     @field_validator("cors_origins", mode="before")
     @classmethod

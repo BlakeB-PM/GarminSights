@@ -13,6 +13,7 @@ from app.config import settings
 from app.database import init_db
 from app.middleware import APIKeyAuthMiddleware, SecurityHeadersMiddleware
 from app.routers import auth, sync, activities, wellness, strength, chat, cycling
+from app.services.cf_access import CFAccessError, validate_access_jwt
 
 # Configure logging
 logging.basicConfig(
@@ -74,6 +75,57 @@ app.include_router(wellness.router)
 app.include_router(strength.router)
 app.include_router(chat.router)
 app.include_router(cycling.router)
+
+
+# ── MCP endpoint (read-only, Cloudflare-Access-gated) ────────────
+# The /mcp endpoint is mounted only when Cloudflare Access is configured.
+# Cloudflare Access handles OAuth at the edge via Managed OAuth and attaches a
+# signed JWT to the request as Cf-Access-Jwt-Assertion. The gate below verifies
+# that JWT before the request reaches the MCP ASGI app, which closes the
+# origin-bypass hole (someone hitting the underlying Fly hostname directly).
+import json as _json
+
+
+class _CFAccessMCPGate:
+    """Validate Cf-Access-Jwt-Assertion before forwarding to the MCP app."""
+
+    def __init__(self, inner_app):
+        self.inner = inner_app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.inner(scope, receive, send)
+            return
+
+        headers = {k.decode("latin-1").lower(): v.decode("latin-1")
+                   for k, v in scope.get("headers", [])}
+        token = headers.get("cf-access-jwt-assertion", "")
+        try:
+            validate_access_jwt(token)
+        except CFAccessError as exc:
+            logger.warning("MCP request rejected: %s", exc)
+            await send({
+                "type": "http.response.start",
+                "status": 401,
+                "headers": [(b"content-type", b"application/json")],
+            })
+            await send({
+                "type": "http.response.body",
+                "body": _json.dumps({"detail": str(exc)}).encode(),
+            })
+            return
+
+        await self.inner(scope, receive, send)
+
+
+if settings.cf_access_team_domain and settings.cf_access_aud:
+    from app.mcp_server import mcp_asgi_app
+    app.mount("/mcp", _CFAccessMCPGate(mcp_asgi_app))
+    logger.info("MCP server mounted at /mcp (Cloudflare Access gate enabled)")
+else:
+    logger.info(
+        "MCP server not mounted: CF_ACCESS_TEAM_DOMAIN / CF_ACCESS_AUD not set"
+    )
 
 
 @app.get("/api/health")

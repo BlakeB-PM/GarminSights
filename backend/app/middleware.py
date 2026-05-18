@@ -41,6 +41,11 @@ class APIKeyAuthMiddleware(BaseHTTPMiddleware):
         if request.url.path in PUBLIC_PATHS:
             return await call_next(request)
 
+        # /mcp is gated separately by the Cloudflare Access JWT validator
+        # mounted in app.main. Don't double-gate with the legacy API key.
+        if request.url.path == "/mcp" or request.url.path.startswith("/mcp/"):
+            return await call_next(request)
+
         # Check Authorization header
         auth_header = request.headers.get("Authorization", "")
         token = None

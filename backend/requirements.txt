@@ -5,4 +5,7 @@ garminconnect==0.2.36
 anthropic==0.84.0
 pydantic==2.12.0
 pydantic-settings==2.1.0
+mcp==1.2.0
+PyJWT[crypto]==2.10.1
+httpx==0.28.1
 

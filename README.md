@@ -245,6 +245,27 @@ All endpoints are prefixed with `/api`.
 | `POST` | `/chat` | Send a message to the AI coach |
 | `GET` | `/chat/context` | Preview the fitness context sent to the model |
 
+### MCP Server — `/mcp`
+
+Read-only Model Context Protocol endpoint that exposes fitness data to MCP
+clients (Claude Code, claude.ai custom connectors). Auth is delegated entirely
+to Cloudflare Access — the application must have **Managed OAuth** enabled in
+the Zero Trust dashboard, and the FastAPI origin validates the
+`Cf-Access-Jwt-Assertion` header on every request before forwarding to the MCP
+ASGI app.
+
+Tools exposed (all read-only):
+
+| Domain | Tools |
+|---|---|
+| Strength | `list_exercises`, `get_strength_sets`, `get_exercise_progress`, `get_personal_records`, `get_recent_strength_workouts`, `get_volume_by_muscle_group` |
+| Activities | `list_activities`, `get_activity` |
+| Wellness | `get_sleep`, `get_sleep_average`, `get_dailies`, `get_recovery_status` |
+| Cycling | `get_cycling_summary` |
+
+To enable, set `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` (see below). The
+endpoint is not mounted when these are unset.
+
 ## Environment Variables
 
 Create a `.env` file in the `backend/` directory (copy from `backend/env.example.txt`):
@@ -266,6 +287,10 @@ ANTHROPIC_API_KEY=sk-ant-...
 # CORS — comma-separated list of allowed frontend origins (web/Cloud Run deployments)
 # Defaults to http://localhost:5173,http://localhost:3000 for local dev
 # CORS_ORIGINS=https://app.yourdomain.com
+
+# MCP server / Cloudflare Access — enables /mcp when both are set
+# CF_ACCESS_TEAM_DOMAIN=<your-team>.cloudflareaccess.com
+# CF_ACCESS_AUD=<Application AUD tag from Zero Trust dashboard>
 ```
 
 > **Note:** `CORS_ORIGINS` must list exact origins — wildcards (`*`) are not supported because the app uses credentialed requests.
