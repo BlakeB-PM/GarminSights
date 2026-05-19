@@ -122,6 +122,15 @@ if settings.cf_access_team_domain and settings.cf_access_aud:
     from app.mcp_server import mcp_asgi_app
     app.mount("/mcp", _CFAccessMCPGate(mcp_asgi_app))
     logger.info("MCP server mounted at /mcp (Cloudflare Access gate enabled)")
+elif not IS_PRODUCTION:
+    # Local development: mount /mcp without auth so the server can be exercised
+    # with the MCP inspector or a local client. Refuses to do this in production.
+    from app.mcp_server import mcp_asgi_app
+    app.mount("/mcp", mcp_asgi_app)
+    logger.warning(
+        "MCP server mounted at /mcp WITHOUT auth (development mode). "
+        "Set CF_ACCESS_TEAM_DOMAIN and CF_ACCESS_AUD for production."
+    )
 else:
     logger.info(
         "MCP server not mounted: CF_ACCESS_TEAM_DOMAIN / CF_ACCESS_AUD not set"
