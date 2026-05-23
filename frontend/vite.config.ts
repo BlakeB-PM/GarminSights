@@ -19,9 +19,14 @@ export default defineConfig(({ mode }) => {
           description: 'Personal fitness analytics dashboard powered by your Garmin data',
           start_url: '/',
           display: 'standalone',
+          // display_override lets Chrome fall back gracefully when a display
+          // mode isn't supported (e.g. desktop ignores fullscreen).
+          display_override: ['standalone', 'minimal-ui'],
           background_color: '#0d1528',
           theme_color: '#0d1528',
-          orientation: 'portrait-primary',
+          // Intentionally no `orientation` — locking to portrait-primary is
+          // hostile to tablets/desktop and Chrome may surface it as a manifest
+          // warning that suppresses installability on rotated devices.
           icons: [
             {
               src: '/icon-192x192.png',

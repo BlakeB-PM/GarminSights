@@ -38,3 +38,19 @@ export function isStandalone(): boolean {
     (window.navigator as unknown as { standalone?: boolean }).standalone === true
   );
 }
+
+// Tear down every service worker registration + cache for this origin and
+// reload. We expose this as a "Reset app data" escape hatch for users whose
+// browser is wedged on a stale SW/precache — a common cause of Chrome
+// hiding the install option after a prior installable build went bad.
+export async function resetPWAState(): Promise<void> {
+  if ('serviceWorker' in navigator) {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map((r) => r.unregister()));
+  }
+  if ('caches' in window) {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((k) => caches.delete(k)));
+  }
+  window.location.reload();
+}

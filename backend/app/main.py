@@ -111,7 +111,11 @@ if _static_dir.is_dir():
     # version. The service worker file is the key one: if the browser caches
     # sw.js it will never detect that a new version has been deployed.
     _NO_CACHE_HEADERS = {"Cache-Control": "no-cache, no-store, must-revalidate"}
-    _NO_CACHE_FILES = {"sw.js", "registerSW.js", "index.html"}
+    # The web manifest must also be no-cached: Chrome reads it to decide
+    # whether the site is installable, and a stale manifest sitting in the
+    # browser HTTP cache (e.g. from before id/icons were fixed) will keep
+    # the install option hidden even after the server has the new version.
+    _NO_CACHE_FILES = {"sw.js", "registerSW.js", "index.html", "manifest.webmanifest"}
 
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
