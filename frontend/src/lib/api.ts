@@ -55,9 +55,61 @@ async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
   throw lastError;
 }
 
+// ── Cloudflare Access re-authentication ──────────────────────────────────
+// The production app sits behind Cloudflare Access. When the access session
+// expires, Cloudflare intercepts API calls and returns a JSON 401 such as:
+//   {"error":"invalid_token", ... "resource_metadata":
+//      "https://.../.well-known/cloudflare-access-protected-resource/..."}
+// For fetch/XHR it can only return this JSON (no login UI is possible); for a
+// top-level *document* navigation it instead 302-redirects through its login.
+// In the installed PWA a plain reload never reaches Cloudflare because the
+// service worker serves the cached app shell for navigations — which is why
+// the only escape used to be incognito. We recover by navigating to /reauth,
+// a path excluded from the SW navigation cache (see vite.config.ts), forcing
+// a real network navigation that Cloudflare can redirect through its login.
+const CF_REAUTH_GUARD_KEY = 'cf_reauth_at';
+const CF_REAUTH_PATH = '/reauth';
+
+function isCloudflareAccessAuthError(body: string): boolean {
+  return (
+    body.includes('cloudflare-access') ||
+    (body.includes('invalid_token') && body.includes('resource_metadata'))
+  );
+}
+
+function triggerCloudflareReauth(): boolean {
+  // Guard against an infinite redirect loop: if we attempted a re-auth moments
+  // ago and are still rejected, stop and let the caller surface a real error.
+  let last = 0;
+  try {
+    last = Number(sessionStorage.getItem(CF_REAUTH_GUARD_KEY) || 0);
+  } catch {
+    /* sessionStorage unavailable — proceed without the loop guard */
+  }
+  if (Date.now() - last < 20000) return false;
+  try {
+    sessionStorage.setItem(CF_REAUTH_GUARD_KEY, String(Date.now()));
+  } catch {
+    /* ignore */
+  }
+  const next = window.location.pathname + window.location.search;
+  window.location.assign(`${CF_REAUTH_PATH}?next=${encodeURIComponent(next)}`);
+  return true;
+}
+
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const text = await response.text().catch(() => '');
+    // Recover from an expired Cloudflare Access session instead of leaving the
+    // user stuck on the raw "invalid_token" error (the chronic sync failure).
+    if (isCloudflareAccessAuthError(text)) {
+      if (triggerCloudflareReauth()) {
+        // Navigation has started; keep the promise pending so the UI doesn't
+        // flash the raw Cloudflare error in the moment before the page unloads.
+        return new Promise<T>(() => {});
+      }
+      throw new Error('Your session expired. Reload the app to sign in again.');
+    }
     // FastAPI returns {"detail": "..."} for HTTP errors
     try {
       const json = JSON.parse(text);
@@ -68,6 +120,13 @@ async function handleResponse<T>(response: Response): Promise<T> {
       if (e instanceof Error && e.message !== text) throw e;
     }
     throw new Error(text || `HTTP ${response.status}`);
+  }
+  // A successful response means the Access cookie is valid again; clear the
+  // re-auth loop guard so a future expiry can trigger a fresh login.
+  try {
+    sessionStorage.removeItem(CF_REAUTH_GUARD_KEY);
+  } catch {
+    /* ignore */
   }
   return response.json() as Promise<T>;
 }

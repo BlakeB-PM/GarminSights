@@ -51,7 +51,12 @@ export default defineConfig(({ mode }) => {
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
           navigateFallback: '/index.html',
-          navigateFallbackDenylist: [/^\/api\//],
+          // `/reauth` must hit the network, not the cached app shell: it's the
+          // sentinel path used to force a real navigation through Cloudflare
+          // Access's login when the session expires (see api.ts). Without this
+          // the SW would serve index.html for it and the user could never
+          // re-authenticate from inside the installed PWA.
+          navigateFallbackDenylist: [/^\/api\//, /^\/reauth(?:\/|$)/],
           // Without skipWaiting/clientsClaim a freshly installed SW sits
           // in "waiting" forever while the old SW keeps controlling every
           // tab on this origin (incognito is the only escape). With them
