@@ -33,6 +33,18 @@ handshake aborts → 525.
    valid/ready.
 3. **DNS points at an origin with no TLS listener** for that hostname.
 
+### Special case: "it worked for months, then broke with no deploy"
+
+When a previously-healthy site starts returning 525 on its own, suspect a
+**time-based failure**, not a config mistake. The usual culprit is the Fly
+**Let's Encrypt cert expiring** (90-day lifetime) because **auto-renewal
+silently failed** — most often because the Cloudflare proxy started
+intercepting the ACME renewal challenge, or a DNS record drifted. The cert keeps
+working until it crosses its expiry date, then handshakes start failing. Confirm
+with `fly certs show` (check the expiry/status) and fix per Step 2. Other
+time-based causes to rule out: a billing/payment lapse suspending the Fly app,
+or an upstream provider change.
+
 ## Step 1 — Isolate edge vs origin
 
 From your machine (not a Cloudflare-proxied path):
