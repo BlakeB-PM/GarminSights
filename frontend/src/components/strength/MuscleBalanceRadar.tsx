@@ -14,10 +14,12 @@ import { TimeFrameSelector } from './TimeFrameSelector';
 import { getMuscleBalance, type MuscleBalance } from '../../lib/api';
 
 type PresetDays = 7 | 30 | 90 | 180 | 365;
+type Metric = 'total' | 'avgPerWeek';
 
 export function MuscleBalanceRadar() {
   const [days, setDays] = useState<PresetDays>(30);
   const [primaryOnly, setPrimaryOnly] = useState(false);
+  const [metric, setMetric] = useState<Metric>('total');
   const [data, setData] = useState<MuscleBalance[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -47,15 +49,30 @@ export function MuscleBalanceRadar() {
   const totalSets = data.reduce((sum, d) => sum + d.sets, 0);
   const hasData = data.some((d) => d.sets > 0);
 
+  const isAvg = metric === 'avgPerWeek';
+  const weeks = days / 7;
+  const roundTenths = (n: number) => Math.round(n * 10) / 10;
+  const chartData = isAvg
+    ? data.map((d) => ({ ...d, sets: roundTenths(d.sets / weeks) }))
+    : data;
+  const headerValue = isAvg
+    ? `Avg: ${roundTenths(totalSets / weeks)} sets/week`
+    : `Total: ${totalSets} sets`;
+  const unitLabel = isAvg ? 'sets/week' : 'sets';
+
   return (
     <Card className="mb-6">
       <CardHeader>
         <div className="flex items-start justify-between gap-4 mb-2">
           <div>
             <CardTitle>Muscle Training Balance</CardTitle>
-            <CardDescription>Sets per muscle group over the selected period</CardDescription>
+            <CardDescription>
+              {isAvg
+                ? 'Average sets per muscle group per week over the selected period'
+                : 'Sets per muscle group over the selected period'}
+            </CardDescription>
           </div>
-          <div className="text-sm text-gray-400 whitespace-nowrap">Total: {totalSets} sets</div>
+          <div className="text-sm text-gray-400 whitespace-nowrap">{headerValue}</div>
         </div>
         <div className="flex gap-4 items-center flex-wrap">
           <TimeFrameSelector
@@ -63,6 +80,23 @@ export function MuscleBalanceRadar() {
             value={days}
             onChange={(v) => setDays(v as PresetDays)}
           />
+          <div className="flex gap-2 items-center">
+            <span className="text-sm text-gray-400">Metric:</span>
+            <Button
+              size="sm"
+              variant={!isAvg ? 'primary' : 'secondary'}
+              onClick={() => setMetric('total')}
+            >
+              Total
+            </Button>
+            <Button
+              size="sm"
+              variant={isAvg ? 'primary' : 'secondary'}
+              onClick={() => setMetric('avgPerWeek')}
+            >
+              Avg / week
+            </Button>
+          </div>
           <div className="flex gap-2 items-center">
             <span className="text-sm text-gray-400">Count:</span>
             <Button
@@ -95,7 +129,7 @@ export function MuscleBalanceRadar() {
             </div>
           ) : hasData ? (
             <ResponsiveContainer width="100%" height="100%">
-              <RadarChart data={data} outerRadius="75%">
+              <RadarChart data={chartData} outerRadius="75%">
                 <PolarGrid stroke="#1e1e2e" />
                 <PolarAngleAxis
                   dataKey="muscle_group"
@@ -107,7 +141,7 @@ export function MuscleBalanceRadar() {
                   angle={90}
                 />
                 <Radar
-                  name="Sets"
+                  name={isAvg ? 'Avg sets/week' : 'Sets'}
                   dataKey="sets"
                   stroke="#0ea5e9"
                   fill="#0ea5e9"
@@ -119,7 +153,10 @@ export function MuscleBalanceRadar() {
                     border: '1px solid #1e1e2e',
                     borderRadius: '8px',
                   }}
-                  formatter={(value: number) => [`${value} sets`, 'Sets']}
+                  formatter={(value: number) => [
+                    `${value} ${unitLabel}`,
+                    isAvg ? 'Avg / week' : 'Sets',
+                  ]}
                 />
               </RadarChart>
             </ResponsiveContainer>
