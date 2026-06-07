@@ -27,6 +27,15 @@ class APIKeyAuthMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next):
+        # MCP secret-path gate: the MCP server is mounted under /<MCP_SECRET>/.
+        # A request whose first path segment matches MCP_SECRET is authenticated
+        # by virtue of knowing the secret URL (works regardless of APP_SECRET_KEY).
+        mcp_secret = os.environ.get("MCP_SECRET", "")
+        if mcp_secret:
+            first_segment = request.url.path.lstrip("/").split("/", 1)[0]
+            if first_segment and secrets.compare_digest(first_segment, mcp_secret):
+                return await call_next(request)
+
         secret = os.environ.get("APP_SECRET_KEY", "")
 
         # Skip auth when no key is configured (local dev)
