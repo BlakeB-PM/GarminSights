@@ -101,7 +101,7 @@ def dict_factory(cursor: sqlite3.Cursor, row: tuple) -> dict:
 def get_db() -> Generator[sqlite3.Connection, None, None]:
     """Get a database connection with row factory set to dict."""
     db_path = get_database_path()
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=30)
     conn.row_factory = dict_factory
     try:
         yield conn
@@ -112,13 +112,16 @@ def get_db() -> Generator[sqlite3.Connection, None, None]:
 def init_db() -> None:
     """Initialize the database with the schema and run migrations."""
     db_path = get_database_path()
-    
+
     # Ensure parent directory exists
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     conn = sqlite3.connect(str(db_path))
     try:
         conn.executescript(SCHEMA)
+        # WAL mode allows readers and writers to coexist without blocking each other.
+        # This setting persists in the DB file, so all subsequent connections benefit.
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.commit()
         print(f"Database initialized at {db_path}")
     finally:
