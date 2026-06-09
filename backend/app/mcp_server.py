@@ -1052,7 +1052,7 @@ def run_sql(query: str, limit: int = 200) -> dict:
 # path in main.py, so the MCP endpoint is /<MCP_SECRET>/mcp.
 # ----------------------------------------------------------------------------
 
-mcp_app = mcp.http_app(path="/mcp")
+mcp_app = mcp.http_app(path="/mcp", stateless_http=True)
 
 
 
