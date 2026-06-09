@@ -12,7 +12,13 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.database import init_db
 from app.middleware import APIKeyAuthMiddleware, SecurityHeadersMiddleware
+from app.mcp_server import mcp_app
 from app.routers import auth, sync, activities, wellness, strength, chat, cycling
+
+# Secret path segment that gates the MCP endpoint (see middleware.py). The MCP
+# server is reachable at /<MCP_SECRET>/mcp. Falls back to /local/mcp in dev.
+MCP_SECRET = os.environ.get("MCP_SECRET", "")
+MCP_MOUNT_PREFIX = f"/{MCP_SECRET}" if MCP_SECRET else "/local"
 
 # Configure logging
 logging.basicConfig(
@@ -27,13 +33,18 @@ IS_PRODUCTION = os.environ.get("ENV", "development") == "production"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan manager."""
+    """Application lifespan manager.
+
+    Nests the FastMCP app's lifespan so the MCP session manager initializes
+    (required for the Streamable HTTP transport when mounted into FastAPI).
+    """
     # Startup
     logger.info("Starting GarminSights API...")
     init_db()
     logger.info("Database initialized")
 
-    yield
+    async with mcp_app.lifespan(app):
+        yield
 
     # Shutdown
     logger.info("Shutting down GarminSights API...")
@@ -74,6 +85,11 @@ app.include_router(wellness.router)
 app.include_router(strength.router)
 app.include_router(chat.router)
 app.include_router(cycling.router)
+
+# ── MCP server (Streamable HTTP) ─────────────────────────────────
+# Mounted BEFORE the SPA catch-all so the mount wins route matching.
+# Reachable at /<MCP_SECRET>/mcp; gated by the secret path in middleware.
+app.mount(MCP_MOUNT_PREFIX, mcp_app)
 
 
 @app.get("/api/health")
