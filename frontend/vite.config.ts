@@ -51,7 +51,12 @@ export default defineConfig(({ mode }) => {
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
           navigateFallback: '/index.html',
-          navigateFallbackDenylist: [/^\/api\//],
+          // Never serve the cached app shell for /api/* or Cloudflare Access's
+          // own /cdn-cgi/access/* endpoints. The latter is how an expired
+          // Access session gets re-authenticated; if the SW shadowed it with
+          // index.html the login redirect could never run and the PWA would be
+          // stuck on a dead session (the "only works in incognito" bug).
+          navigateFallbackDenylist: [/^\/api\//, /^\/cdn-cgi\//],
           // Without skipWaiting/clientsClaim a freshly installed SW sits
           // in "waiting" forever while the old SW keeps controlling every
           // tab on this origin (incognito is the only escape). With them
