@@ -63,6 +63,12 @@ async def login(request: LoginRequest = None):
             success, _, error = garmin.login(mfa_code=mfa_code, mfa_token=mfa_token)
             if success:
                 return AuthStatus(authenticated=True, username=garmin.username)
+            # If the MFA session token is gone (e.g., a previous request already
+            # consumed it and saved the Garmin session, but the network dropped
+            # before the response reached the client), check whether we're already
+            # authenticated before surfacing an error.
+            if garmin.check_session():
+                return AuthStatus(authenticated=True, username=garmin.username)
             return AuthStatus(
                 authenticated=False,
                 error=error or "MFA verification failed."
