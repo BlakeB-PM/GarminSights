@@ -84,11 +84,17 @@ async function recoverFromExpiredAccess(): Promise<void> {
   }
 
   const alreadyTried = sessionStorage.getItem(CF_REAUTH_FLAG) === '1';
-  sessionStorage.setItem(CF_REAUTH_FLAG, '1');
   if (alreadyTried) {
+    // Clear the flag BEFORE navigating to CF login. If another 401 appears
+    // after the user authenticates and returns to the app (e.g., a race before
+    // the first successful response clears it), we fall back to a plain reload
+    // instead of sending them to the login form a second time — which would
+    // show "code already used" if they resubmit the same OTP.
+    sessionStorage.removeItem(CF_REAUTH_FLAG);
     const target = encodeURIComponent(window.location.pathname + window.location.search);
     window.location.href = `/cdn-cgi/access/login/${window.location.host}?redirect_url=${target}`;
   } else {
+    sessionStorage.setItem(CF_REAUTH_FLAG, '1');
     window.location.reload();
   }
 }
