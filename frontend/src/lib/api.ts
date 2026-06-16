@@ -28,11 +28,6 @@ const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
  */
 const COLD_START_RETRY_STATUSES = new Set([502, 503, 504]);
 
-// sessionStorage key that records we've already tried to recover an expired
-// Cloudflare Access session this browsing session — guards against a reload
-// loop if the recovery navigation somehow fails to refresh the cookie.
-const CF_REAUTH_FLAG = 'gs:cf-access-reauth';
-
 /**
  * This app is served behind Cloudflare Access (Zero Trust). Access hands the
  * browser a `CF_Authorization` cookie that expires after a fixed session
@@ -61,14 +56,21 @@ function isCloudflareAccessChallenge(response: Response, body: string): boolean 
 let reauthInFlight = false;
 
 /**
- * Recover from an expired Cloudflare Access session. We tear down the service
- * worker and its caches so the next navigation is served from the network
- * rather than the cached app shell, then reload. Cloudflare answers that
- * top-level navigation with its login redirect and mints a fresh cookie —
- * silently when the upstream IdP session is still valid, otherwise after one
- * login. If a plain reload already failed once this session, fall back to
- * Cloudflare's explicit login endpoint (excluded from the SW navigation
- * fallback) so we never spin in a reload loop.
+ * Recover from an expired Cloudflare Access session.
+ *
+ * For the PWA case we first tear down the service worker and its caches so
+ * the subsequent navigation is served from the network. Then we navigate
+ * directly to Cloudflare's explicit login endpoint. Cloudflare handles
+ * everything from there: if the upstream IdP session is still valid it
+ * silently mints a fresh CF_Authorization cookie and redirects back; if not,
+ * it shows the login form (email OTP or SSO) exactly once.
+ *
+ * The previous approach did a `window.location.reload()` first, which caused
+ * Cloudflare's login to appear *during* the reload navigation — the user
+ * would enter and consume their OTP there. If any 401 then fired after the
+ * app reloaded, the code redirected to CF login a second time with the same
+ * already-consumed code → "code already used" error. Navigating directly to
+ * the login endpoint eliminates that double-login scenario entirely.
  */
 async function recoverFromExpiredAccess(): Promise<void> {
   if (reauthInFlight) return;
@@ -83,20 +85,8 @@ async function recoverFromExpiredAccess(): Promise<void> {
     await Promise.all(keys.map((k) => caches.delete(k)));
   }
 
-  const alreadyTried = sessionStorage.getItem(CF_REAUTH_FLAG) === '1';
-  if (alreadyTried) {
-    // Clear the flag BEFORE navigating to CF login. If another 401 appears
-    // after the user authenticates and returns to the app (e.g., a race before
-    // the first successful response clears it), we fall back to a plain reload
-    // instead of sending them to the login form a second time — which would
-    // show "code already used" if they resubmit the same OTP.
-    sessionStorage.removeItem(CF_REAUTH_FLAG);
-    const target = encodeURIComponent(window.location.pathname + window.location.search);
-    window.location.href = `/cdn-cgi/access/login/${window.location.host}?redirect_url=${target}`;
-  } else {
-    sessionStorage.setItem(CF_REAUTH_FLAG, '1');
-    window.location.reload();
-  }
+  const target = encodeURIComponent(window.location.pathname + window.location.search);
+  window.location.href = `/cdn-cgi/access/login/${window.location.host}?redirect_url=${target}`;
 }
 
 async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
@@ -119,9 +109,6 @@ async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
           throw new Error('Re-authenticating with Cloudflare Access…');
         }
       }
-      // A good response means the session is valid — clear any prior recovery
-      // marker so a later expiry in the same session can self-heal again.
-      if (response.ok) sessionStorage.removeItem(CF_REAUTH_FLAG);
       if (retriable && COLD_START_RETRY_STATUSES.has(response.status) && attempt < maxAttempts - 1) {
         await new Promise((r) => setTimeout(r, delays[attempt]));
         continue;
