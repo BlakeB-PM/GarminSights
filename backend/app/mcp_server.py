@@ -36,9 +36,9 @@ mcp = FastMCP(
         "sleep, and daily wellness are all queryable. Prefer the curated tools; use "
         "describe_data + run_sql for anything granular (e.g. rest times, a specific "
         "muscle, custom date slices). All weights are in pounds (lbs); durations are "
-        "in seconds unless noted. Use sync_garmin_data to pull the latest data from "
-        "Garmin Connect before querying — especially useful when the user wants "
-        "up-to-date workouts, sleep, or wellness metrics."
+        "in seconds unless noted. Always call sync_garmin_data before answering any "
+        "question about workouts, sleep, or wellness — this ensures the data is "
+        "current. Sync first, then query."
     ),
 )
 
