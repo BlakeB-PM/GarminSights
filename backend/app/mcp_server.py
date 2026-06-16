@@ -18,6 +18,7 @@ from fastmcp import FastMCP
 
 from app.database import execute_query, SCHEMA
 from app.services.activity_parser import parse_activity_data
+from app.services.sync_service import SyncService
 from app.services.muscle_mapping import (
     MUSCLE_GROUPS,
     get_all_muscle_groups,
@@ -35,7 +36,9 @@ mcp = FastMCP(
         "sleep, and daily wellness are all queryable. Prefer the curated tools; use "
         "describe_data + run_sql for anything granular (e.g. rest times, a specific "
         "muscle, custom date slices). All weights are in pounds (lbs); durations are "
-        "in seconds unless noted. Data is only as fresh as the last manual sync."
+        "in seconds unless noted. Use sync_garmin_data to pull the latest data from "
+        "Garmin Connect before querying — especially useful when the user wants "
+        "up-to-date workouts, sleep, or wellness metrics."
     ),
 )
 
@@ -1003,6 +1006,46 @@ def describe_data() -> dict:
             "get_activity_detail to parse them.",
         ],
     }
+
+
+# ----------------------------------------------------------------------------
+# Sync
+# ----------------------------------------------------------------------------
+
+@mcp.tool
+def sync_garmin_data(days_back: int = 7) -> dict:
+    """Pull the latest data from Garmin Connect into the local database.
+
+    Syncs activities (including strength sets), sleep records, and daily
+    wellness metrics for the past `days_back` days.  Safe to call at any
+    time — already-synced records are silently skipped (idempotent).
+
+    Args:
+        days_back: How many days of history to sync (1–90, default 7).
+
+    Returns a summary with counts of newly synced records plus any warnings.
+    Call this before querying when you need up-to-date data.
+    """
+    days_back = max(1, min(days_back, 90))
+    try:
+        svc = SyncService()
+        result = svc.sync_all(days_back=days_back)
+    except Exception as exc:
+        return {"success": False, "error": f"{type(exc).__name__}: {exc}"}
+
+    out: dict = {
+        "success": result.success,
+        "days_synced": days_back,
+        "activities_synced": result.activities_synced,
+        "strength_sets_extracted": result.strength_sets_extracted,
+        "sleep_days_synced": result.sleep_days_synced,
+        "dailies_synced": result.dailies_synced,
+    }
+    if result.error:
+        out["error"] = result.error
+    if result.warnings:
+        out["warnings"] = result.warnings
+    return out
 
 
 # Single-statement read-only guard for run_sql.
