@@ -28,77 +28,6 @@ const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
  */
 const COLD_START_RETRY_STATUSES = new Set([502, 503, 504]);
 
-// sessionStorage key that records we've already tried to recover an expired
-// Cloudflare Access session this browsing session — guards against a reload
-// loop if the recovery navigation somehow fails to refresh the cookie.
-const CF_REAUTH_FLAG = 'gs:cf-access-reauth';
-
-/**
- * This app is served behind Cloudflare Access (Zero Trust). Access hands the
- * browser a `CF_Authorization` cookie that expires after a fixed session
- * duration. For a top-level navigation Cloudflare refreshes that cookie with a
- * login redirect, but for an XHR/`fetch` it instead returns a 401 — newer
- * builds emit an RFC 9728 body that points at
- * `.well-known/cloudflare-access-protected-resource`. A `fetch` can't follow
- * Cloudflare's cross-origin login redirect (CORS), so the call just dead-ends.
- *
- * The installed PWA makes this worse: it boots its app shell from the service
- * worker cache, so a relaunch never makes the navigation that would refresh
- * the cookie — every data call then 401s and the app looks frozen (the
- * "have to use incognito" symptom). Detect that signature so we can self-heal.
- */
-function isCloudflareAccessChallenge(response: Response, body: string): boolean {
-  if (response.status !== 401 && response.status !== 403) return false;
-  const wwwAuth = response.headers.get('www-authenticate') ?? '';
-  return (
-    /cloudflare-access-protected-resource/i.test(body) ||
-    /cdn-cgi\/access/i.test(body) ||
-    (/invalid_token/i.test(body) && /resource_metadata/i.test(body)) ||
-    /cloudflare/i.test(wwwAuth)
-  );
-}
-
-let reauthInFlight = false;
-
-/**
- * Recover from an expired Cloudflare Access session. We tear down the service
- * worker and its caches so the next navigation is served from the network
- * rather than the cached app shell, then reload. Cloudflare answers that
- * top-level navigation with its login redirect and mints a fresh cookie —
- * silently when the upstream IdP session is still valid, otherwise after one
- * login. If a plain reload already failed once this session, fall back to
- * Cloudflare's explicit login endpoint (excluded from the SW navigation
- * fallback) so we never spin in a reload loop.
- */
-async function recoverFromExpiredAccess(): Promise<void> {
-  if (reauthInFlight) return;
-  reauthInFlight = true;
-
-  if ('serviceWorker' in navigator) {
-    const regs = await navigator.serviceWorker.getRegistrations();
-    await Promise.all(regs.map((r) => r.unregister()));
-  }
-  if ('caches' in window) {
-    const keys = await caches.keys();
-    await Promise.all(keys.map((k) => caches.delete(k)));
-  }
-
-  const alreadyTried = sessionStorage.getItem(CF_REAUTH_FLAG) === '1';
-  if (alreadyTried) {
-    // Clear the flag BEFORE navigating to CF login. If another 401 appears
-    // after the user authenticates and returns to the app (e.g., a race before
-    // the first successful response clears it), we fall back to a plain reload
-    // instead of sending them to the login form a second time — which would
-    // show "code already used" if they resubmit the same OTP.
-    sessionStorage.removeItem(CF_REAUTH_FLAG);
-    const target = encodeURIComponent(window.location.pathname + window.location.search);
-    window.location.href = `/cdn-cgi/access/login/${window.location.host}?redirect_url=${target}`;
-  } else {
-    sessionStorage.setItem(CF_REAUTH_FLAG, '1');
-    window.location.reload();
-  }
-}
-
 async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
   const method = (init?.method ?? 'GET').toUpperCase();
   const retriable = method === 'GET' || method === 'HEAD';
@@ -109,19 +38,6 @@ async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       const response = await fetch(url, { credentials: 'include', ...init });
-      // Cloudflare Access session expired: self-heal by refreshing the cookie
-      // via a real navigation. Checked before the cold-start retry below so an
-      // auth 401 isn't mistaken for a transient backend hiccup.
-      if (response.status === 401 || response.status === 403) {
-        const peek = await response.clone().text().catch(() => '');
-        if (isCloudflareAccessChallenge(response, peek)) {
-          await recoverFromExpiredAccess();
-          throw new Error('Re-authenticating with Cloudflare Access…');
-        }
-      }
-      // A good response means the session is valid — clear any prior recovery
-      // marker so a later expiry in the same session can self-heal again.
-      if (response.ok) sessionStorage.removeItem(CF_REAUTH_FLAG);
       if (retriable && COLD_START_RETRY_STATUSES.has(response.status) && attempt < maxAttempts - 1) {
         await new Promise((r) => setTimeout(r, delays[attempt]));
         continue;
