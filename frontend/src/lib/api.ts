@@ -28,67 +28,6 @@ const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
  */
 const COLD_START_RETRY_STATUSES = new Set([502, 503, 504]);
 
-/**
- * This app is served behind Cloudflare Access (Zero Trust). Access hands the
- * browser a `CF_Authorization` cookie that expires after a fixed session
- * duration. For a top-level navigation Cloudflare refreshes that cookie with a
- * login redirect, but for an XHR/`fetch` it instead returns a 401 — newer
- * builds emit an RFC 9728 body that points at
- * `.well-known/cloudflare-access-protected-resource`. A `fetch` can't follow
- * Cloudflare's cross-origin login redirect (CORS), so the call just dead-ends.
- *
- * The installed PWA makes this worse: it boots its app shell from the service
- * worker cache, so a relaunch never makes the navigation that would refresh
- * the cookie — every data call then 401s and the app looks frozen (the
- * "have to use incognito" symptom). Detect that signature so we can self-heal.
- */
-function isCloudflareAccessChallenge(response: Response, body: string): boolean {
-  if (response.status !== 401 && response.status !== 403) return false;
-  const wwwAuth = response.headers.get('www-authenticate') ?? '';
-  return (
-    /cloudflare-access-protected-resource/i.test(body) ||
-    /cdn-cgi\/access/i.test(body) ||
-    (/invalid_token/i.test(body) && /resource_metadata/i.test(body)) ||
-    /cloudflare/i.test(wwwAuth)
-  );
-}
-
-let reauthInFlight = false;
-
-/**
- * Recover from an expired Cloudflare Access session.
- *
- * For the PWA case we first tear down the service worker and its caches so
- * the subsequent navigation is served from the network. Then we navigate
- * directly to Cloudflare's explicit login endpoint. Cloudflare handles
- * everything from there: if the upstream IdP session is still valid it
- * silently mints a fresh CF_Authorization cookie and redirects back; if not,
- * it shows the login form (email OTP or SSO) exactly once.
- *
- * The previous approach did a `window.location.reload()` first, which caused
- * Cloudflare's login to appear *during* the reload navigation — the user
- * would enter and consume their OTP there. If any 401 then fired after the
- * app reloaded, the code redirected to CF login a second time with the same
- * already-consumed code → "code already used" error. Navigating directly to
- * the login endpoint eliminates that double-login scenario entirely.
- */
-async function recoverFromExpiredAccess(): Promise<void> {
-  if (reauthInFlight) return;
-  reauthInFlight = true;
-
-  if ('serviceWorker' in navigator) {
-    const regs = await navigator.serviceWorker.getRegistrations();
-    await Promise.all(regs.map((r) => r.unregister()));
-  }
-  if ('caches' in window) {
-    const keys = await caches.keys();
-    await Promise.all(keys.map((k) => caches.delete(k)));
-  }
-
-  const target = encodeURIComponent(window.location.pathname + window.location.search);
-  window.location.href = `/cdn-cgi/access/login/${window.location.host}?redirect_url=${target}`;
-}
-
 async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
   const method = (init?.method ?? 'GET').toUpperCase();
   const retriable = method === 'GET' || method === 'HEAD';
@@ -99,16 +38,6 @@ async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       const response = await fetch(url, { credentials: 'include', ...init });
-      // Cloudflare Access session expired: self-heal by refreshing the cookie
-      // via a real navigation. Checked before the cold-start retry below so an
-      // auth 401 isn't mistaken for a transient backend hiccup.
-      if (response.status === 401 || response.status === 403) {
-        const peek = await response.clone().text().catch(() => '');
-        if (isCloudflareAccessChallenge(response, peek)) {
-          await recoverFromExpiredAccess();
-          throw new Error('Re-authenticating with Cloudflare Access…');
-        }
-      }
       if (retriable && COLD_START_RETRY_STATUSES.has(response.status) && attempt < maxAttempts - 1) {
         await new Promise((r) => setTimeout(r, delays[attempt]));
         continue;
