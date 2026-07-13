@@ -12,6 +12,15 @@ export default defineConfig(({ mode }) => {
       VitePWA({
         registerType: 'autoUpdate',
         includeAssets: ['icon.svg', 'icon-*.png'],
+        // Emit the manifest <link> with crossorigin="use-credentials".
+        // Browsers fetch the web app manifest WITHOUT cookies by default —
+        // even same-origin — so behind Cloudflare Access the anonymous
+        // fetch gets bounced to the Access login gate, Chrome sees a broken
+        // manifest, and the site is deemed non-installable (the browser
+        // menu only offers "Create shortcut" instead of "Install app").
+        // use-credentials makes the manifest request carry the Access
+        // session cookie so it reaches the real file.
+        useCredentials: true,
         manifest: {
           id: '/',
           name: 'GarminSights',
