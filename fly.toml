@@ -16,7 +16,12 @@ primary_region = 'dfw'
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = 'stop'
+  # 'suspend' (vs 'stop') resumes the machine from a memory snapshot in well
+  # under a second instead of a 15-30s full cold boot. That cold boot made the
+  # post-login redirect from Cloudflare Access hang on a seemingly frozen code
+  # page — users would click Verify a second time and consume their one-time
+  # PIN twice ("This One-Time PIN has already been used").
+  auto_stop_machines = 'suspend'
   auto_start_machines = true
   min_machines_running = 0
 
