@@ -38,6 +38,9 @@ async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       const response = await fetch(url, { credentials: 'include', ...init });
+      if (response.status === 401 || response.status === 403) {
+        void probeAccessSession();
+      }
       if (retriable && COLD_START_RETRY_STATUSES.has(response.status) && attempt < maxAttempts - 1) {
         await new Promise((r) => setTimeout(r, delays[attempt]));
         continue;
@@ -45,6 +48,13 @@ async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
       return response;
     } catch (err) {
       lastError = err;
+      // A cross-origin redirect to the Cloudflare Access login page is
+      // CORS-blocked and surfaces here as a plain TypeError, not a response
+      // we can inspect — treat any fetch-level failure as a signal worth
+      // probing for an expired Access session.
+      if (err instanceof TypeError) {
+        void probeAccessSession();
+      }
       if (attempt < maxAttempts - 1) {
         await new Promise((r) => setTimeout(r, delays[attempt]));
         continue;
@@ -114,6 +124,90 @@ export async function login(params?: LoginParams): Promise<AuthStatus> {
 export async function logout(): Promise<AuthStatus> {
   const response = await apiFetch(`${API_BASE}/api/auth/logout`, { method: 'POST' });
   return handleResponse<AuthStatus>(response);
+}
+
+// ============================================
+// Cloudflare Access session-expiry detection
+//
+// This is PASSIVE detection only — it notifies subscribers so the UI can
+// show a banner, and it MUST NOT trigger any automatic redirect or reload.
+// A previous "self-heal" attempt auto-redirected the page to the Cloudflare
+// Access login endpoint whenever an API call came back 401. That backfired:
+// a stray 401 arriving right after a successful login (e.g. an in-flight
+// request issued before the new session cookie was visible everywhere)
+// would kick off a *second* login redirect, and Access One-Time PIN codes
+// are single-use — the second redirect either reused a consumed code or
+// raced the first login, producing a confusing "code already used" error.
+// That auto-redirect was removed in commit 9116c8f and must not come back.
+// Instead, we only ever surface expiry to the user, who can then choose to
+// reload (a user-initiated top-level navigation), which is what actually
+// lets Cloudflare Access re-authenticate cleanly.
+// ============================================
+
+const accessSessionExpiredSubscribers = new Set<() => void>();
+
+export function onAccessSessionExpired(cb: () => void): () => void {
+  accessSessionExpiredSubscribers.add(cb);
+  return () => {
+    accessSessionExpiredSubscribers.delete(cb);
+  };
+}
+
+function notifyAccessSessionExpired(): void {
+  for (const cb of accessSessionExpiredSubscribers) {
+    cb();
+  }
+}
+
+let lastProbeAt = 0;
+let probeInFlight: Promise<void> | null = null;
+const PROBE_THROTTLE_MS = 30 * 1000;
+
+/**
+ * Probe whether the Cloudflare Access session has expired, without ever
+ * redirecting or reloading anything. Throttled to at most once per 30s and
+ * single-flight so bursts of 401s (e.g. several widgets refetching at once)
+ * only cause one network round-trip.
+ */
+function probeAccessSession(): Promise<void> {
+  if (probeInFlight) return probeInFlight;
+  const now = Date.now();
+  if (now - lastProbeAt < PROBE_THROTTLE_MS) return Promise.resolve();
+  lastProbeAt = now;
+
+  probeInFlight = (async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/health`, {
+        redirect: 'manual',
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      // An opaque redirect means the request was redirected somewhere we
+      // can't inspect (CORS hides the details) — the only thing in front of
+      // /api/health that would redirect it is the Cloudflare Access login
+      // gate, so this is a reliable signal the session has expired.
+      if (res.type === 'opaqueredirect') {
+        notifyAccessSessionExpired();
+        return;
+      }
+      if (res.status === 401 || res.status === 403) {
+        const text = await res.text().catch(() => '');
+        // Match both the older redirect-style Access challenge (an HTML
+        // login page served at 401/403) and the newer RFC 9728-style
+        // challenge, so we don't mistake an ordinary app-level 401/403 for
+        // an expired Access session.
+        if (/cdn-cgi\/access|cloudflare/i.test(text)) {
+          notifyAccessSessionExpired();
+        }
+      }
+    } catch {
+      // Likely offline, or some other transient network failure — not
+      // evidence of an expired session, so ignore it.
+    } finally {
+      probeInFlight = null;
+    }
+  })();
+  return probeInFlight;
 }
 
 // ============================================
