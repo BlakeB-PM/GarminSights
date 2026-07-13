@@ -188,6 +188,13 @@ Until a test framework is set up, validate backend changes by running the dev se
 - **No test runner is configured yet** — do not add Jest/Vitest config without explicit instruction.
 - Always run `npm run typecheck` and `npm run lint` after making frontend changes.
 
+### PWA & Cloudflare Access
+
+The production origin (`https://garminsights.blakebeal.com`) sits behind Cloudflare Access (email OTP) — every request, including the first navigation, is auth-gated at the edge before it ever reaches this app.
+
+- **The service worker must never serve navigations cache-first.** `navigateFallback` in `frontend/vite.config.ts` must stay `null`. Navigations are handled by a `NetworkFirst` runtime-caching route instead, so an expired Access session actually reaches the network and gets redirected to the Access login gate, and a fresh deploy shows up on a plain reload. If navigations were served from precache (the old `navigateFallback: '/index.html'` behavior), an expired session could never re-authenticate and deployed fixes would never reach an already-installed PWA — only incognito would work.
+- **Never auto-redirect to the Cloudflare Access login endpoint (or auto-reload) on an API 401/403.** A previous "self-heal" that did this was removed (commit `9116c8f`) after it caused a "code already used" OTP bug — a stray 401 could trigger a second login redirect and consume/race the one-time code. Access-session-expiry detection (`onAccessSessionExpired` in `frontend/src/lib/api.ts`) is intentionally passive: it only notifies the UI to show a dismissible banner (`frontend/src/App.tsx`) with a button the user clicks to reload. Do not wire it up to anything automatic.
+
 ---
 
 ## API Structure

@@ -27,12 +27,20 @@ registerSW({
   // standalone PWA only checks on navigation — so users who keep the app
   // open never see updates until they manually relaunch.
   onRegisteredSW(_swUrl, registration) {
-    registration &&
-      setInterval(() => {
-        if (!registration.installing && navigator.onLine) {
-          registration.update();
-        }
-      }, 60 * 1000);
+    if (!registration) return;
+    setInterval(() => {
+      if (!registration.installing && navigator.onLine) {
+        registration.update();
+      }
+    }, 60 * 1000);
+    // Also check immediately whenever the app is brought back into view —
+    // e.g. reopening an installed PWA — instead of waiting up to 60s for
+    // the next poll tick.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && !registration.installing && navigator.onLine) {
+        registration.update();
+      }
+    });
   },
 });
 

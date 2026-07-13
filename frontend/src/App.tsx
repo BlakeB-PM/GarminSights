@@ -10,7 +10,7 @@ import { StrengthAnalytics } from './pages/StrengthAnalytics';
 import { CyclingAnalytics } from './pages/CyclingAnalytics';
 import { Coach } from './pages/Coach';
 import { Settings } from './pages/Settings';
-import { syncData, SyncStatus } from './lib/api';
+import { syncData, type SyncStatus, onAccessSessionExpired } from './lib/api';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -26,6 +26,17 @@ function AppLayout() {
   const [syncResult, setSyncResult] = useState<{ status: SyncStatus; ts: number } | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => window.innerWidth < 1024);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
+
+  // Surface an expired Cloudflare Access session as a banner. This is
+  // purely informational — we never auto-redirect or auto-reload here (see
+  // the comment above onAccessSessionExpired in lib/api.ts for why). The
+  // user decides when to reload, which is what actually re-triggers the
+  // Access login gate.
+  useEffect(() => {
+    const unsubscribe = onAccessSessionExpired(() => setSessionExpired(true));
+    return unsubscribe;
+  }, []);
 
   // Auto-collapse sidebar on smaller screens (landscape mobile)
   useEffect(() => {
@@ -72,6 +83,30 @@ function AppLayout() {
 
   return (
     <div className="min-h-screen">
+      {/* Cloudflare Access session-expired banner. Shown once and left up —
+          the user dismisses or reloads on their own terms; we never
+          auto-redirect or auto-reload (see lib/api.ts). */}
+      {sessionExpired && (
+        <div className="fixed top-0 inset-x-0 z-50 flex items-center justify-center gap-3 bg-amber-900/95 border-b border-amber-700 text-amber-100 px-4 py-2 text-sm shadow-lg">
+          <span>Your sign-in session has expired.</span>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="rounded bg-amber-700 hover:bg-amber-600 px-3 py-1 font-semibold text-amber-50"
+          >
+            Sign in again
+          </button>
+          <button
+            type="button"
+            onClick={() => setSessionExpired(false)}
+            aria-label="Dismiss"
+            className="ml-1 text-amber-200 hover:text-amber-50"
+          >
+            &times;
+          </button>
+        </div>
+      )}
+
       <Sidebar
         onSync={handleSync}
         isSyncing={isSyncing}
