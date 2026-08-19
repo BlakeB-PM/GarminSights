@@ -245,6 +245,33 @@ def migration_3_convert_weight_to_lbs() -> None:
         conn.close()
 
 
+def migration_4_seed_coaching_rules() -> None:
+    """
+    Migration 4: Seed Blake's standing training rules.
+
+    The coaching_rules and training_plans tables are created by the schema in
+    database.py; this migration only populates the initial rule set, and only
+    when the table is empty. Retiring a seeded rule is therefore permanent:
+    a later deploy will not bring it back.
+    """
+    db_path = get_database_path()
+
+    if not db_path.exists():
+        logger.info("Database doesn't exist yet, migration not needed")
+        return
+
+    try:
+        from app.services.coaching_store import seed_rules_if_empty
+        inserted = seed_rules_if_empty()
+        if inserted:
+            logger.info(f"Migration 4: seeded {inserted} coaching rules")
+        else:
+            logger.info("Migration 4: coaching_rules already populated, nothing to seed")
+    except Exception as e:
+        logger.error(f"Migration 4 failed: {e}")
+        raise
+
+
 def run_migrations() -> None:
     """Run all pending migrations."""
     db_path = get_database_path()
@@ -254,7 +281,7 @@ def run_migrations() -> None:
         return
     
     current_version = get_schema_version(db_path)
-    target_version = 3
+    target_version = 4
     
     if current_version >= target_version:
         logger.info(f"Database is at version {current_version}, no migrations needed")
@@ -276,6 +303,11 @@ def run_migrations() -> None:
     if current_version < 3:
         migration_3_convert_weight_to_lbs()
         set_schema_version(db_path, 3)
+    
+    # Migration 4: Seed coaching rules
+    if current_version < 4:
+        migration_4_seed_coaching_rules()
+        set_schema_version(db_path, 4)
     
     logger.info("All migrations completed successfully")
 
