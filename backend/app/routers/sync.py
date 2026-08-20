@@ -57,12 +57,10 @@ async def sync_data(request: SyncRequest = None):
     # Check authentication
     garmin = get_garmin_service()
     
-    if not garmin.check_session():
-        logger.warning("Sync attempted without valid session")
-        raise HTTPException(
-            status_code=401,
-            detail="Not authenticated. Please login first."
-        )
+    ready, auth_error = garmin.ensure_client()
+    if not ready:
+        logger.warning("Sync attempted without a usable session: %s", auth_error)
+        raise HTTPException(status_code=401, detail=auth_error)
     
     # Set defaults
     if request is None:
@@ -87,8 +85,9 @@ async def sync_data(request: SyncRequest = None):
 async def sync_activities_only(limit: int = 50):
     """Sync only activities."""
     garmin = get_garmin_service()
-    if not garmin.check_session():
-        raise HTTPException(status_code=401, detail="Not authenticated")
+    ready, auth_error = garmin.ensure_client()
+    if not ready:
+        raise HTTPException(status_code=401, detail=auth_error)
     
     sync_service = get_sync_service()
     
@@ -107,8 +106,9 @@ async def sync_activities_only(limit: int = 50):
 async def sync_sleep_only(days_back: int = 30):
     """Sync only sleep data."""
     garmin = get_garmin_service()
-    if not garmin.check_session():
-        raise HTTPException(status_code=401, detail="Not authenticated")
+    ready, auth_error = garmin.ensure_client()
+    if not ready:
+        raise HTTPException(status_code=401, detail=auth_error)
     
     sync_service = get_sync_service()
     
@@ -126,8 +126,9 @@ async def sync_sleep_only(days_back: int = 30):
 async def sync_dailies_only(days_back: int = 30):
     """Sync only daily metrics."""
     garmin = get_garmin_service()
-    if not garmin.check_session():
-        raise HTTPException(status_code=401, detail="Not authenticated")
+    ready, auth_error = garmin.ensure_client()
+    if not ready:
+        raise HTTPException(status_code=401, detail=auth_error)
     
     sync_service = get_sync_service()
     
@@ -150,8 +151,9 @@ async def backfill_strength_data():
     strength training activities that don't have this data yet.
     """
     garmin = get_garmin_service()
-    if not garmin.check_session():
-        raise HTTPException(status_code=401, detail="Not authenticated")
+    ready, auth_error = garmin.ensure_client()
+    if not ready:
+        raise HTTPException(status_code=401, detail=auth_error)
     
     sync_service = get_sync_service()
     

@@ -27,6 +27,57 @@ from garminconnect import Garmin
 logger = logging.getLogger(__name__)
 
 
+class GarminAuthError(Exception):
+    """Garmin rejected our stored session and a fresh login is required.
+
+    Raised instead of returning an empty result so a dead token surfaces as
+    "re-authenticate" rather than "you have no activities".
+    """
+
+
+def _login_url() -> str:
+    """Best guess at where Blake can complete a Garmin login in the browser."""
+    explicit = _original_getenv("APP_PUBLIC_URL", "").strip()
+    if explicit:
+        return explicit.rstrip("/")
+    for origin in settings.cors_origins:
+        if origin.startswith("https://"):
+            return origin.rstrip("/")
+    return "the GarminSights web app"
+
+
+def login_required_message() -> str:
+    return (
+        "Garmin Connect is not authenticated. Sign in to Garmin again at "
+        f"{_login_url()}. The refreshed token is saved and reused for future syncs."
+    )
+
+
+def mfa_required_message() -> str:
+    return (
+        "Garmin is asking for a verification code, which cannot be entered from "
+        f"here. Open {_login_url()}, sign in to Garmin, and enter the emailed code."
+    )
+
+
+def _is_auth_error(exc: BaseException) -> bool:
+    """True when a garth/garminconnect exception is a 401/403 rejection.
+
+    garth wraps requests' HTTPError inside GarthHTTPError.error, so check both
+    levels before falling back to matching the message text.
+    """
+    for candidate in (getattr(exc, "error", None), exc):
+        response = getattr(candidate, "response", None)
+        status = getattr(response, "status_code", None)
+        if status in (401, 403):
+            return True
+    text = str(exc).lower()
+    return any(
+        marker in text
+        for marker in ("401 client error", "403 client error", "invalid_token", "unauthorized")
+    )
+
+
 def _patch_garth_load_handle_missing_files():
     """Patch garth.Client.load to clear GARMINTOKENS on FileNotFoundError before re-raising.
     Ensures our Garmin.login retry has a clean env when it retries with tokenstore=None.
@@ -134,6 +185,11 @@ _patch_garth_mfa_title_check()
 MFA_SESSION_TTL_SECONDS = 300
 _mfa_sessions: dict[str, dict] = {}
 
+# Garmin locks accounts that retry credential logins in a loop, so the headless
+# fallback login gets at most one attempt per cooldown window per process.
+CREDENTIAL_LOGIN_COOLDOWN_SECONDS = 300
+_last_credential_login_attempt: float = 0.0
+
 
 class GarminService:
     """Service for interacting with Garmin Connect API via garminconnect."""
@@ -215,7 +271,100 @@ class GarminService:
         Avoids a live Garmin API call so this stays fast; actual token validity
         is verified lazily when data-fetching endpoints are called.
         """
+        if self._client is not None:
+            return True
         return self._load_session()
+
+    def _persist_tokens(self) -> None:
+        """Write the client's current garth tokens back to the token directory."""
+        if not self._client:
+            return
+        try:
+            self._client.garth.dump(str(get_garth_tokens_path()))
+        except Exception as e:
+            logger.warning("Could not persist refreshed Garmin tokens: %s", e)
+
+    def refresh_tokens_if_needed(self) -> None:
+        """Exchange the long-lived OAuth1 token for a fresh OAuth2 token if expired.
+
+        garth already does this lazily on the next API call, but doing it up
+        front means a dead token raises GarminAuthError here instead of being
+        swallowed by a fetch helper and reported as "no data". The refreshed
+        token is written back to disk so the next cold start skips the exchange.
+        """
+        if not self._client:
+            return
+
+        garth = self._client.garth
+        token = getattr(garth, "oauth2_token", None)
+        if token is not None and not getattr(token, "expired", True):
+            return
+
+        try:
+            garth.refresh_oauth2()
+        except Exception as e:
+            if _is_auth_error(e):
+                raise GarminAuthError(login_required_message()) from e
+            raise
+
+        self._persist_tokens()
+        logger.info("Refreshed Garmin OAuth2 token from the stored OAuth1 token")
+
+    def ensure_client(self) -> tuple[bool, Optional[str]]:
+        """Guarantee a usable Garmin client, rehydrating from disk when needed.
+
+        The client only ever lives in memory, so every fresh process starts with
+        `_client = None` even though valid tokens are sitting in the token
+        directory. The REST routes happened to rehydrate as a side effect of
+        their check_session() gate; the MCP tools called straight into
+        SyncService and saw an unauthenticated service on any cold start (Fly
+        machine waking from auto-stop, container redeploy, worker restart).
+        Every caller that needs the Garmin API now goes through here instead of
+        reading `_client` directly.
+
+        Returns (ready, error_message).
+        """
+        if self._client is None and not self._load_session():
+            return self._login_with_env_credentials()
+
+        try:
+            self.refresh_tokens_if_needed()
+        except GarminAuthError as e:
+            logger.warning("Stored Garmin tokens were rejected: %s", e)
+            self._client = None
+            return self._login_with_env_credentials()
+        except Exception as e:
+            # A network blip during the pre-emptive refresh shouldn't block the
+            # sync — garth retries the exchange on the next API call anyway.
+            logger.warning("Could not pre-refresh the Garmin token: %s", e)
+
+        return True, None
+
+    def _login_with_env_credentials(self) -> tuple[bool, Optional[str]]:
+        """Fall back to a credential login from GARMIN_EMAIL / GARMIN_PASSWORD.
+
+        MFA-protected accounts cannot finish this headlessly, so the caller gets
+        an explicit "complete the login in the browser" message rather than a
+        generic failure.
+        """
+        global _last_credential_login_attempt
+
+        if not (settings.garmin_email and settings.garmin_password):
+            return False, login_required_message()
+
+        if time.time() - _last_credential_login_attempt < CREDENTIAL_LOGIN_COOLDOWN_SECONDS:
+            logger.info("Skipping credential login, still inside the retry cooldown")
+            return False, login_required_message()
+        _last_credential_login_attempt = time.time()
+
+        logger.info("No usable stored session, attempting a credential login")
+        success, mfa_token, error = self.login()
+        if success:
+            return True, None
+        if mfa_token:
+            _mfa_sessions.pop(mfa_token, None)
+            return False, mfa_required_message()
+        return False, f"{login_required_message()} Garmin reported: {error}"
     
     def login(
         self,
@@ -392,13 +541,15 @@ class GarminService:
         Returns:
             List of activity summaries
         """
-        if not self._client:
-            logger.error("Not logged in")
-            return []
+        ready, error = self.ensure_client()
+        if not ready:
+            raise GarminAuthError(error or login_required_message())
         
         try:
             return self._client.get_activities(start, limit) or []
         except Exception as e:
+            if _is_auth_error(e):
+                raise GarminAuthError(login_required_message()) from e
             logger.error(f"Failed to fetch activities: {e}")
             return []
     
@@ -415,13 +566,15 @@ class GarminService:
         Returns:
             Detailed activity data including exercise sets
         """
-        if not self._client:
-            logger.error("Not logged in")
-            return None
+        ready, error = self.ensure_client()
+        if not ready:
+            raise GarminAuthError(error or login_required_message())
         
         try:
             return self._client.get_activity(activity_id)
         except Exception as e:
+            if _is_auth_error(e):
+                raise GarminAuthError(login_required_message()) from e
             logger.error(f"Failed to fetch activity details: {e}")
             return None
     
@@ -437,13 +590,15 @@ class GarminService:
         Returns:
             Exercise sets data with sets, reps, weights, and exercise names
         """
-        if not self._client:
-            logger.error("Not logged in")
-            return None
+        ready, error = self.ensure_client()
+        if not ready:
+            raise GarminAuthError(error or login_required_message())
         
         try:
             return self._client.get_activity_exercise_sets(activity_id)
         except Exception as e:
+            if _is_auth_error(e):
+                raise GarminAuthError(login_required_message()) from e
             logger.error(f"Failed to fetch exercise sets for {activity_id}: {e}")
             return None
     
@@ -457,13 +612,15 @@ class GarminService:
         Returns:
             Sleep data for the date
         """
-        if not self._client:
-            logger.error("Not logged in")
-            return None
+        ready, error = self.ensure_client()
+        if not ready:
+            raise GarminAuthError(error or login_required_message())
         
         try:
             return self._client.get_sleep_data(date_str)
         except Exception as e:
+            if _is_auth_error(e):
+                raise GarminAuthError(login_required_message()) from e
             logger.error(f"Failed to fetch sleep data for {date_str}: {e}")
             return None
     
@@ -477,13 +634,15 @@ class GarminService:
         Returns:
             Daily summary data
         """
-        if not self._client:
-            logger.error("Not logged in")
-            return None
+        ready, error = self.ensure_client()
+        if not ready:
+            raise GarminAuthError(error or login_required_message())
         
         try:
             return self._client.get_stats(date_str)
         except Exception as e:
+            if _is_auth_error(e):
+                raise GarminAuthError(login_required_message()) from e
             logger.error(f"Failed to fetch daily summary for {date_str}: {e}")
             return None
 

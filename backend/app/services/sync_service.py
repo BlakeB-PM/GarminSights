@@ -6,7 +6,11 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from app.database import execute_query, execute_write, execute_many, get_db
-from app.services.garmin_service import get_garmin_service, GarminService
+from app.services.garmin_service import (
+    GarminAuthError,
+    GarminService,
+    get_garmin_service,
+)
 from app.models.schemas import SyncStatus
 
 logger = logging.getLogger(__name__)
@@ -38,11 +42,19 @@ class SyncService:
             status.error = error_msg
             return status
         
-        if not self._garmin._client:
-            error_msg = "Garmin client not authenticated. Please login first."
-            logger.error(error_msg)
-            status.error = error_msg
-            status.details = {"auth_check": "failed", "username": self._garmin._username}
+        # Load the saved session if this process hasn't yet. Only the REST
+        # routes used to do this (as a side effect of their check_session
+        # gate), so an MCP-driven sync on a cold process failed even with valid
+        # tokens sitting on disk.
+        ready, auth_error = self._garmin.ensure_client()
+        if not ready:
+            logger.error("Sync aborted, no Garmin session: %s", auth_error)
+            status.error = auth_error
+            status.details = {
+                "auth_check": "failed",
+                "auth_required": True,
+                "username": self._garmin._username,
+            }
             return status
         
         logger.info(f"Starting full sync for last {days_back} days")
@@ -78,6 +90,11 @@ class SyncService:
             status.success = True
             logger.info(f"Full sync complete: {status.activities_synced} activities, {status.sleep_days_synced} sleep days, {status.dailies_synced} daily records")
             
+        except GarminAuthError as e:
+            logger.error(f"Sync aborted, Garmin rejected the session: {e}")
+            status.error = str(e)
+            status.details["auth_check"] = "rejected"
+            status.details["auth_required"] = True
         except Exception as e:
             logger.error(f"Sync failed: {e}", exc_info=True)
             status.error = f"{type(e).__name__}: {str(e)}"
@@ -108,9 +125,12 @@ class SyncService:
         max_consecutive_existing = 50  # Stop after 50 consecutive existing activities
         
         # Check if Garmin client is available
-        if not self._garmin or not self._garmin._client:
-            logger.error("Garmin client not initialized. Cannot sync activities.")
+        if not self._garmin:
+            logger.error("Garmin service not initialized. Cannot sync activities.")
             return 0, 0
+        ready, auth_error = self._garmin.ensure_client()
+        if not ready:
+            raise GarminAuthError(auth_error or "Garmin Connect is not authenticated.")
         
         logger.info(f"Starting activity sync (days_back={days_back}, batch_size={batch_size})")
         
@@ -118,6 +138,9 @@ class SyncService:
             # Fetch next batch
             try:
                 activities = self._garmin.fetch_activities(limit=batch_size, start=start)
+            except GarminAuthError:
+                # A dead token affects every batch; retrying just wastes calls.
+                raise
             except Exception as e:
                 error_msg = f"Failed to fetch activities batch (start={start}): {e}"
                 logger.error(error_msg)
@@ -312,6 +335,8 @@ class SyncService:
                 logger.info(f"Extracted {sets_inserted} sets from activity {garmin_id}")
             return sets_inserted
             
+        except GarminAuthError:
+            raise
         except Exception as e:
             logger.error(f"Deep fetch failed for {garmin_id}: {e}", exc_info=True)
             return 0
@@ -443,6 +468,8 @@ class SyncService:
                 if is_update:
                     logger.debug(f"Updated existing sleep record for {date_str}")
                 
+            except GarminAuthError:
+                raise
             except Exception as e:
                 logger.warning(f"Failed to sync sleep for {date_str}: {e}")
         
@@ -538,6 +565,8 @@ class SyncService:
                 if is_update:
                     logger.debug(f"Updated existing daily record for {date_str}")
                 
+            except GarminAuthError:
+                raise
             except Exception as e:
                 logger.warning(f"Failed to sync dailies for {date_str}: {e}")
         
