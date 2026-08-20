@@ -249,7 +249,7 @@ def migration_4_seed_coaching_rules() -> None:
     """
     Migration 4: Seed Blake's standing training rules.
 
-    The coaching_rules and training_plans tables are created by the schema in
+    The coaching_rules and training_routines tables are created by the schema in
     database.py; this migration only populates the initial rule set, and only
     when the table is empty. Retiring a seeded rule is therefore permanent:
     a later deploy will not bring it back.
@@ -272,6 +272,52 @@ def migration_4_seed_coaching_rules() -> None:
         raise
 
 
+def migration_5_drop_training_plans() -> None:
+    """
+    Migration 5: Drop the training_plans table.
+
+    training_plans modelled a multi-week schedule with one active program. Blake
+    trains week to week, so it was replaced by training_routines (a library of
+    sessions, several active at once) before either shipped. The table was
+    introduced on the same unmerged branch and never reached production.
+
+    Guarded: if the table somehow holds rows, this logs and leaves it alone
+    rather than destroying data.
+    """
+    db_path = get_database_path()
+
+    if not db_path.exists():
+        logger.info("Database doesn't exist yet, migration not needed")
+        return
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        exists = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='training_plans'"
+        ).fetchone()
+        if not exists:
+            logger.info("Migration 5: training_plans not present, nothing to drop")
+            return
+
+        rows = conn.execute("SELECT COUNT(*) FROM training_plans").fetchone()[0]
+        if rows:
+            logger.warning(
+                f"Migration 5: training_plans holds {rows} row(s), leaving it in place. "
+                "Move the data into training_routines and drop it by hand."
+            )
+            return
+
+        conn.execute("DROP TABLE training_plans")
+        conn.commit()
+        logger.info("Migration 5: dropped empty training_plans table")
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Migration 5 failed: {e}")
+        raise
+    finally:
+        conn.close()
+
+
 def run_migrations() -> None:
     """Run all pending migrations."""
     db_path = get_database_path()
@@ -281,7 +327,7 @@ def run_migrations() -> None:
         return
     
     current_version = get_schema_version(db_path)
-    target_version = 4
+    target_version = 5
     
     if current_version >= target_version:
         logger.info(f"Database is at version {current_version}, no migrations needed")
@@ -308,6 +354,11 @@ def run_migrations() -> None:
     if current_version < 4:
         migration_4_seed_coaching_rules()
         set_schema_version(db_path, 4)
+    
+    # Migration 5: Drop training_plans, replaced by training_routines
+    if current_version < 5:
+        migration_5_drop_training_plans()
+        set_schema_version(db_path, 5)
     
     logger.info("All migrations completed successfully")
 

@@ -101,18 +101,18 @@ CREATE TABLE IF NOT EXISTS coaching_rules (
     retired_at TEXT
 );
 
--- training_plans: programs built in conversation, saved so they survive the
--- chat session that produced them. plan_json holds the day/block structure.
-CREATE TABLE IF NOT EXISTS training_plans (
+-- training_routines: named sessions Blake likes and reuses. This is a library,
+-- not a schedule. He trains week to week, so several routines are active at
+-- once and he picks one based on time available and what needs volume.
+CREATE TABLE IF NOT EXISTS training_routines (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
+    focus TEXT NOT NULL DEFAULT 'full',
     goal TEXT,
-    status TEXT NOT NULL DEFAULT 'active',
-    days_per_week INTEGER,
-    starts_on DATE,
-    ends_on DATE,
-    plan_json TEXT NOT NULL,
+    estimated_minutes INTEGER,
+    blocks_json TEXT NOT NULL,
     notes TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
     archived_reason TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -128,10 +128,8 @@ CREATE INDEX IF NOT EXISTS idx_strength_sets_activity ON strength_sets(activity_
 CREATE INDEX IF NOT EXISTS idx_strength_sets_exercise ON strength_sets(exercise_name);
 CREATE INDEX IF NOT EXISTS idx_coaching_rules_status ON coaching_rules(status);
 CREATE INDEX IF NOT EXISTS idx_coaching_rules_type ON coaching_rules(rule_type);
-CREATE INDEX IF NOT EXISTS idx_training_plans_status ON training_plans(status);
--- At most one active plan at a time; saving a new one archives the previous.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_training_plans_single_active
-    ON training_plans(status) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS idx_training_routines_status ON training_routines(status);
+CREATE INDEX IF NOT EXISTS idx_training_routines_focus ON training_routines(focus);
 """
 
 

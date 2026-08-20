@@ -28,7 +28,7 @@ GarminSights/
 │   │   │   └── schemas.py    # Pydantic request/response models
 │   │   ├── routers/          # One file per feature area (auth, sync, activities, etc.)
 │   │   └── services/         # Business logic (Garmin API, AI coach, parsers)
-│   │       └── coaching_store.py  # Coaching rules + saved training plans
+│   │       └── coaching_store.py  # Coaching rules + routine library
 │   ├── requirements.txt
 │   └── env.example.txt
 ├── frontend/                 # React + TypeScript + Vite SPA
@@ -225,7 +225,7 @@ In production, the FastAPI app also serves the built React SPA from `frontend/di
 `backend/app/mcp_server.py` exposes the fitness data to Claude chat as a remote MCP
 connector (FastMCP, Streamable HTTP). It is mounted at `/<MCP_SECRET>/mcp` and gated
 by the secret path segment in `middleware.py`. Claude chat is the primary interface
-for this data, so the server carries policy and saved programs, not just queries.
+for this data, so the server carries policy and saved sessions, not just queries.
 
 Three groups of tools:
 
@@ -233,7 +233,7 @@ Three groups of tools:
 |-------|-------|---------|
 | Data (read-only) | `get_fitness_summary`, `get_training_frequency`, `run_sql`, etc. | `activities`, `sleep`, `dailies`, `strength_sets` |
 | Rules | `get_coaching_context`, `propose_rule`, `confirm_rule`, `update_rule`, `retire_rule`, `review_rules` | `coaching_rules` |
-| Plans | `save_training_plan`, `get_active_training_plan`, `update_training_plan`, `archive_training_plan` | `training_plans` |
+| Routines | `list_training_routines`, `get_training_routine`, `save_training_routine`, `update_training_routine`, `archive_training_routine` | `training_routines` |
 
 ### The protocol/content split
 
@@ -261,13 +261,21 @@ The initial rule set is seeded by migration 4 from Blake's `fitness` skill in th
 personal-os vault, and only when `coaching_rules` is empty. That skill is now a
 pointer to this server: the rules live here, not there.
 
-### Training plans
+### The routine library
 
-`training_plans.plan_json` holds the day/block structure; a partial unique index
-enforces at most one `status='active'` plan, so saving a new active plan archives
-the previous one. `save_training_plan` checks the plan against the constraints that
-are structurally checkable (currently squat/hinge separation) and returns
-`rule_warnings` without blocking the save.
+`training_routines` is a **library, not a schedule**. Blake trains week to week and
+his days are unpredictable, so several routines are active at once and the coach
+picks one based on the time he has (`max_minutes`) and which muscle groups are short
+on weekly volume. There are deliberately no dates, no assigned weekdays, and no
+adherence tracking: an earlier `training_plans` table modelled a multi-week program
+with one active plan and was replaced before it shipped (migration 5 drops it).
+
+`blocks_json` holds an ordered list of blocks, each `straight` (one movement) or
+`superset` (two or more paired). `save_training_routine` checks the routine against
+the constraints that are structurally checkable, currently squat/hinge separation
+and the session length cap when an estimate is supplied, and returns `rule_warnings`
+without blocking the save. Adding a check here only makes sense when it can be
+verified from structure alone; volume and pairing quality need a human read.
 
 ## Deployment
 
@@ -287,9 +295,12 @@ The production app runs at `https://garminsights.blakebeal.com`.
 - **Do not change `fly.toml`** without explicit instruction — it controls the production deployment.
 - **Do not hardcode the Anthropic model name** in `coach_service.py`. Always use the `COACH_MODEL` setting.
 - **Do not add `any` types or `// @ts-ignore`** to silence TypeScript errors; fix the underlying type issue.
-- **Do not delete rows from `coaching_rules` or `training_plans`.** These are Blake's
+- **Do not delete rows from `coaching_rules` or `training_routines`.** These are Blake's
   data, captured in conversation and not recoverable from Garmin. Retire and archive
   instead; both tables keep retired rows on purpose.
+- **Do not add scheduling to `training_routines`.** Weekdays, start dates, and
+  adherence tracking were considered and rejected: Blake trains opportunistically,
+  and a schedule he cannot keep produces false "missed session" signal.
 - **Do not move the coaching rules into the MCP `instructions` string.** That string
   is the protocol and only changes on deploy; the rules must stay editable by talking
   to the server.

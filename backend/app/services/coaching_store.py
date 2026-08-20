@@ -1,9 +1,9 @@
-"""Coaching policy and saved training plans.
+"""Coaching policy and Blake's routine library.
 
-Blake's durable training rules and the programs built with him in conversation
-both live in fitness.db so they survive the chat session that produced them.
-This module is the only place that reads or writes those two tables; the MCP
-tools in mcp_server.py are thin wrappers over these functions.
+His durable training rules and the sessions he likes both live in fitness.db so
+they survive the chat that produced them. This module is the only place that
+reads or writes those two tables; the MCP tools in mcp_server.py are thin
+wrappers over these functions.
 
 Two ideas keep the system honest:
 
@@ -35,8 +35,6 @@ RULE_TYPES = (
 RULE_SCOPES = ("strength", "cycling", "cardio", "recovery", "nutrition", "global")
 
 RULE_STATUSES = ("proposed", "active", "retired")
-
-PLAN_STATUSES = ("active", "draft", "archived")
 
 # Soft ceiling on the active rule set. Past this, the model is told to prompt
 # for a prune rather than silently accumulating contradictions.
@@ -96,6 +94,17 @@ SEED_RULES: list[dict] = [
         "scope": "strength",
         "rule": "10 or more sets per muscle group per week.",
         "rationale": "Blake's hypertrophy volume floor.",
+    },
+    {
+        "rule_type": "preference",
+        "scope": "strength",
+        "rule": (
+            "Blake trains week to week, not to a fixed weekly schedule. Suggest "
+            "sessions from his saved routine library and adapt to the time he "
+            "actually has, rather than building multi-week programs with days "
+            "assigned to them."
+        ),
+        "rationale": "His week is too unpredictable to hold a schedule. Stated 2026-08-20.",
     },
     {
         "rule_type": "equipment",
@@ -370,65 +379,71 @@ def review_rules() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Training plans
+# Training routines
 # ---------------------------------------------------------------------------
+#
+# A routine is one session Blake likes and reuses, not a day in a schedule.
+# His week is unpredictable, so the library holds several active routines and
+# he picks one based on the time he has and what needs volume. There is
+# deliberately no calendar here and no adherence tracking.
 
-PLAN_SHAPE = {
-    "days": [
-        {
-            "day": "Monday (or 'Day 1')",
-            "focus": "e.g. Lower (squat anchor)",
-            "blocks": [
-                {
-                    "type": "straight | superset",
-                    "exercises": [
-                        {
-                            "name": "Barbell Back Squat",
-                            "sets": 4,
-                            "reps": "5-8",
-                            "notes": "optional",
-                        }
-                    ],
-                }
-            ],
-        }
-    ]
-}
+ROUTINE_FOCUSES = (
+    "upper", "lower", "full", "push", "pull", "accessory", "conditioning",
+)
+
+ROUTINE_STATUSES = ("active", "archived")
+
+BLOCK_TYPES = ("straight", "superset")
+
+# Mirrors the seeded session-length constraint. Kept as a constant so
+# check_routine_against_rules can flag a routine that busts the cap.
+SESSION_MINUTES_CAP = 60
+
+BLOCKS_SHAPE = [
+    {
+        "type": "straight | superset",
+        "exercises": [
+            {
+                "name": "Barbell Bench Press",
+                "sets": 4,
+                "reps": "6-8",
+                "notes": "optional",
+            }
+        ],
+    }
+]
 
 # Movements that must not share a session, per Blake's standing constraint.
 _SQUAT_PATTERN = ("squat",)
 _HINGE_PATTERN = ("deadlift", "romanian")
 
 
-def _validate_plan(plan: dict) -> str | None:
-    if not isinstance(plan, dict):
-        return "plan must be an object with a 'days' list."
-    days = plan.get("days")
-    if not isinstance(days, list) or not days:
-        return "plan.days must be a non-empty list."
-    for i, day in enumerate(days):
-        if not isinstance(day, dict):
-            return f"plan.days[{i}] must be an object."
-        if not day.get("day"):
-            return f"plan.days[{i}] needs a 'day' label."
-        blocks = day.get("blocks")
-        if not isinstance(blocks, list) or not blocks:
-            return f"plan.days[{i}].blocks must be a non-empty list."
-        for j, block in enumerate(blocks):
-            if not isinstance(block, dict):
-                return f"plan.days[{i}].blocks[{j}] must be an object."
-            exercises = block.get("exercises")
-            if not isinstance(exercises, list) or not exercises:
-                return f"plan.days[{i}].blocks[{j}].exercises must be a non-empty list."
-            for k, ex in enumerate(exercises):
-                if not isinstance(ex, dict) or not ex.get("name"):
-                    return f"plan.days[{i}].blocks[{j}].exercises[{k}] needs a 'name'."
+def _validate_blocks(blocks: list) -> str | None:
+    if not isinstance(blocks, list) or not blocks:
+        return "blocks must be a non-empty list."
+    for i, block in enumerate(blocks):
+        if not isinstance(block, dict):
+            return f"blocks[{i}] must be an object."
+        btype = block.get("type", "straight")
+        if btype not in BLOCK_TYPES:
+            return f"blocks[{i}].type must be one of: {', '.join(BLOCK_TYPES)}."
+        exercises = block.get("exercises")
+        if not isinstance(exercises, list) or not exercises:
+            return f"blocks[{i}].exercises must be a non-empty list."
+        if btype == "superset" and len(exercises) < 2:
+            return (
+                f"blocks[{i}] is typed 'superset' but has one exercise. "
+                "Use type 'straight' for a solo movement."
+            )
+        for j, ex in enumerate(exercises):
+            if not isinstance(ex, dict) or not ex.get("name"):
+                return f"blocks[{i}].exercises[{j}] needs a 'name'."
     return None
 
 
-def _day_exercise_names(day: dict) -> list[str]:
+def _block_exercise_names(blocks: list) -> list[str]:
     names: list[str] = []
-    for block in day.get("blocks", []):
+    for block in blocks:
         for ex in block.get("exercises", []):
             name = ex.get("name")
             if name:
@@ -436,193 +451,222 @@ def _day_exercise_names(day: dict) -> list[str]:
     return names
 
 
-def check_plan_against_rules(plan: dict) -> list[str]:
-    """Check a plan against the constraints that are structurally checkable.
+def check_routine_against_rules(
+    blocks: list, estimated_minutes: int | None = None
+) -> list[str]:
+    """Check a routine against the constraints that are structurally checkable.
 
-    Only the squat/hinge separation rule can be verified from the plan shape
-    alone. Session length, volume targets, and pairing quality still need a
-    human read, so this deliberately reports little rather than pretending to
-    validate everything.
+    Only two of Blake's rules can be verified without a human read: squat/hinge
+    separation, and the session length cap when an estimate is supplied. Volume
+    targets and pairing quality still need judgment, so this deliberately
+    reports little rather than pretending to validate everything.
     """
     warnings: list[str] = []
-    for day in plan.get("days", []):
-        names = _day_exercise_names(day)
-        has_squat = any(any(p in n for p in _SQUAT_PATTERN) for n in names)
-        has_hinge = any(any(p in n for p in _HINGE_PATTERN) for n in names)
-        if has_squat and has_hinge:
-            warnings.append(
-                f"{day.get('day')}: contains both a squat and a deadlift/RDL pattern, "
-                "which violates the squat/hinge separation constraint."
-            )
+
+    names = _block_exercise_names(blocks)
+    has_squat = any(any(p in n for p in _SQUAT_PATTERN) for n in names)
+    has_hinge = any(any(p in n for p in _HINGE_PATTERN) for n in names)
+    if has_squat and has_hinge:
+        warnings.append(
+            "Contains both a squat and a deadlift/RDL pattern in one session, "
+            "which violates the squat/hinge separation constraint."
+        )
+
+    if estimated_minutes and estimated_minutes > SESSION_MINUTES_CAP:
+        warnings.append(
+            f"Estimated at {estimated_minutes} minutes, over the "
+            f"{SESSION_MINUTES_CAP} minute session cap."
+        )
+
     return warnings
 
 
-def _row_to_plan(row: dict) -> dict:
+def _row_to_routine(row: dict) -> dict:
     out = dict(row)
     try:
-        out["plan"] = json.loads(row["plan_json"])
+        out["blocks"] = json.loads(row["blocks_json"])
     except (TypeError, ValueError):
-        out["plan"] = None
-    out.pop("plan_json", None)
+        out["blocks"] = None
+    out.pop("blocks_json", None)
     return out
 
 
-def _get_plan(plan_id: int) -> dict | None:
-    rows = execute_query("SELECT * FROM training_plans WHERE id = ?", (plan_id,))
-    return _row_to_plan(rows[0]) if rows else None
+def _get_routine(routine_id: int) -> dict | None:
+    rows = execute_query("SELECT * FROM training_routines WHERE id = ?", (routine_id,))
+    return _row_to_routine(rows[0]) if rows else None
 
 
-def get_active_plan() -> dict | None:
-    rows = execute_query("SELECT * FROM training_plans WHERE status = 'active' LIMIT 1")
-    return _row_to_plan(rows[0]) if rows else None
+def get_routine(routine_id: int) -> dict | None:
+    return _get_routine(routine_id)
 
 
-def list_plans(include_archived: bool = False) -> list[dict]:
-    clause = "" if include_archived else "WHERE status != 'archived'"
+def list_routines(
+    focus: str | None = None,
+    max_minutes: int | None = None,
+    include_archived: bool = False,
+) -> list[dict]:
+    """List routines with their full block structure.
+
+    max_minutes filters to routines that fit a window of time. Routines with no
+    estimate are always included, since an unknown length is not a known
+    overrun and Blake can judge it himself.
+    """
+    where: list[str] = []
+    params: list = []
+
+    if not include_archived:
+        where.append("status = 'active'")
+    if focus:
+        where.append("focus = ?")
+        params.append(focus)
+    if max_minutes is not None:
+        where.append("(estimated_minutes IS NULL OR estimated_minutes <= ?)")
+        params.append(max_minutes)
+
+    clause = f"WHERE {' AND '.join(where)}" if where else ""
     rows = execute_query(
         f"""
-        SELECT id, name, goal, status, days_per_week, starts_on, ends_on,
-               notes, archived_reason, created_at, updated_at, archived_at
-        FROM training_plans
+        SELECT * FROM training_routines
         {clause}
-        ORDER BY CASE status WHEN 'active' THEN 1 WHEN 'draft' THEN 2 ELSE 3 END,
-                 updated_at DESC
-        """
+        ORDER BY CASE status WHEN 'active' THEN 1 ELSE 2 END, updated_at DESC
+        """,
+        tuple(params),
     )
-    return rows
+    return [_row_to_routine(r) for r in rows]
 
 
-def save_plan(
+def save_routine(
     name: str,
-    plan: dict,
+    blocks: list,
+    focus: str = "full",
     goal: str | None = None,
-    days_per_week: int | None = None,
-    starts_on: str | None = None,
-    ends_on: str | None = None,
+    estimated_minutes: int | None = None,
     notes: str | None = None,
-    status: str = "active",
 ) -> dict:
-    """Save a program built in conversation. Saving a new active plan archives
-    whichever plan was active before, so there is always exactly one."""
+    """Add a routine to the library.
+
+    Saving does not displace anything. The library is meant to hold several
+    routines at once, so revise an existing one with update_routine rather than
+    saving a near-duplicate.
+    """
     name = (name or "").strip()
     if not name:
         return {"error": "name is required."}
-    if status not in PLAN_STATUSES:
-        return {"error": f"Unknown status '{status}'. Use one of: {', '.join(PLAN_STATUSES)}."}
+    if focus not in ROUTINE_FOCUSES:
+        return {"error": f"Unknown focus '{focus}'. Use one of: {', '.join(ROUTINE_FOCUSES)}."}
 
-    shape_error = _validate_plan(plan)
+    shape_error = _validate_blocks(blocks)
     if shape_error:
-        return {"error": shape_error, "expected_shape": PLAN_SHAPE}
+        return {"error": shape_error, "expected_shape": BLOCKS_SHAPE}
 
-    warnings = check_plan_against_rules(plan)
+    warnings = check_routine_against_rules(blocks, estimated_minutes)
+
+    existing = execute_query(
+        "SELECT id, name FROM training_routines WHERE LOWER(name) = LOWER(?) AND status = 'active'",
+        (name,),
+    )
+    if existing:
+        return {
+            "error": (
+                f"An active routine named '{existing[0]['name']}' already exists "
+                f"(id {existing[0]['id']}). Update it instead of saving a duplicate, "
+                "or pick a different name."
+            )
+        }
 
     now = _now()
-    previous = None
-    if status == "active":
-        current = get_active_plan()
-        if current:
-            execute_write(
-                """
-                UPDATE training_plans
-                SET status = 'archived', archived_at = ?, updated_at = ?,
-                    archived_reason = ?
-                WHERE id = ?
-                """,
-                (now, now, f"Replaced by '{name}'.", current["id"]),
-            )
-            previous = {"id": current["id"], "name": current["name"]}
-
-    if days_per_week is None:
-        days_per_week = len(plan.get("days", []))
-
-    plan_id = execute_write(
+    routine_id = execute_write(
         """
-        INSERT INTO training_plans
-            (name, goal, status, days_per_week, starts_on, ends_on,
-             plan_json, notes, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO training_routines
+            (name, focus, goal, estimated_minutes, blocks_json, notes,
+             status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)
         """,
-        (
-            name, goal, status, days_per_week, starts_on, ends_on,
-            json.dumps(plan), notes, now, now,
-        ),
+        (name, focus, goal, estimated_minutes, json.dumps(blocks), notes, now, now),
     )
 
-    out: dict = {"saved": _get_plan(plan_id)}
-    if previous:
-        out["archived_previous"] = previous
+    out: dict = {"saved": _get_routine(routine_id)}
     if warnings:
         out["rule_warnings"] = warnings
-        out["note"] = "Plan was saved. Raise these warnings with Blake."
+        out["note"] = "Routine was saved. Raise these warnings with Blake."
     return out
 
 
-def update_plan(
-    plan_id: int,
+def update_routine(
+    routine_id: int,
     name: str | None = None,
-    plan: dict | None = None,
+    blocks: list | None = None,
+    focus: str | None = None,
     goal: str | None = None,
-    days_per_week: int | None = None,
-    starts_on: str | None = None,
-    ends_on: str | None = None,
+    estimated_minutes: int | None = None,
     notes: str | None = None,
 ) -> dict:
-    """Revise a saved plan in place. Pass only the fields that change."""
-    existing = _get_plan(plan_id)
+    """Revise a routine in place. Pass only the fields that change."""
+    existing = _get_routine(routine_id)
     if existing is None:
-        return {"error": f"No plan with id {plan_id}."}
+        return {"error": f"No routine with id {routine_id}."}
 
-    warnings: list[str] = []
-    if plan is not None:
-        shape_error = _validate_plan(plan)
+    if focus is not None and focus not in ROUTINE_FOCUSES:
+        return {"error": f"Unknown focus '{focus}'. Use one of: {', '.join(ROUTINE_FOCUSES)}."}
+
+    if blocks is not None:
+        shape_error = _validate_blocks(blocks)
         if shape_error:
-            return {"error": shape_error, "expected_shape": PLAN_SHAPE}
-        warnings = check_plan_against_rules(plan)
-        plan_json = json.dumps(plan)
+            return {"error": shape_error, "expected_shape": BLOCKS_SHAPE}
+        blocks_json = json.dumps(blocks)
+        effective_blocks = blocks
     else:
-        plan_json = json.dumps(existing["plan"])
+        blocks_json = json.dumps(existing["blocks"])
+        effective_blocks = existing["blocks"]
+
+    effective_minutes = (
+        estimated_minutes if estimated_minutes is not None
+        else existing["estimated_minutes"]
+    )
+    warnings = check_routine_against_rules(effective_blocks, effective_minutes)
 
     execute_write(
         """
-        UPDATE training_plans
-        SET name = ?, goal = ?, days_per_week = ?, starts_on = ?, ends_on = ?,
-            plan_json = ?, notes = ?, updated_at = ?
+        UPDATE training_routines
+        SET name = ?, focus = ?, goal = ?, estimated_minutes = ?,
+            blocks_json = ?, notes = ?, updated_at = ?
         WHERE id = ?
         """,
         (
             (name or existing["name"]).strip(),
+            focus or existing["focus"],
             goal if goal is not None else existing["goal"],
-            days_per_week if days_per_week is not None else existing["days_per_week"],
-            starts_on if starts_on is not None else existing["starts_on"],
-            ends_on if ends_on is not None else existing["ends_on"],
-            plan_json,
+            effective_minutes,
+            blocks_json,
             notes if notes is not None else existing["notes"],
             _now(),
-            plan_id,
+            routine_id,
         ),
     )
 
-    out: dict = {"updated": _get_plan(plan_id)}
+    out: dict = {"updated": _get_routine(routine_id)}
     if warnings:
         out["rule_warnings"] = warnings
     return out
 
 
-def archive_plan(plan_id: int, reason: str | None = None) -> dict:
-    existing = _get_plan(plan_id)
+def archive_routine(routine_id: int, reason: str | None = None) -> dict:
+    """Retire a routine Blake has stopped using. It stays queryable via
+    list_routines(include_archived=True)."""
+    existing = _get_routine(routine_id)
     if existing is None:
-        return {"error": f"No plan with id {plan_id}."}
+        return {"error": f"No routine with id {routine_id}."}
 
     now = _now()
     execute_write(
         """
-        UPDATE training_plans
+        UPDATE training_routines
         SET status = 'archived', archived_at = ?, updated_at = ?, archived_reason = ?
         WHERE id = ?
         """,
-        (now, now, (reason or "").strip() or None, plan_id),
+        (now, now, (reason or "").strip() or None, routine_id),
     )
-    return {"archived": _get_plan(plan_id)}
+    return {"archived": _get_routine(routine_id)}
 
 
 # ---------------------------------------------------------------------------
@@ -631,7 +675,8 @@ def archive_plan(plan_id: int, reason: str | None = None) -> dict:
 
 def get_context() -> dict:
     """Everything the model needs before programming: the active rule set grouped
-    by type, the active plan, and anything still awaiting Blake's confirmation."""
+    by type, a summary of the routine library, and anything still awaiting
+    Blake's confirmation."""
     active = list_rules(status="active")
 
     grouped: dict[str, list[dict]] = {}
@@ -640,7 +685,7 @@ def get_context() -> dict:
             {"id": r["id"], "scope": r["scope"], "rule": r["rule"], "why": r["rationale"]}
         )
 
-    plan = get_active_plan()
+    routines = list_routines()
     proposed = list_rules(status="proposed")
 
     out: dict = {
@@ -648,13 +693,21 @@ def get_context() -> dict:
             "constraint": "Binding. Do not violate. Say so if Blake asks for something that would.",
             "limitation": "Binding. Physical restriction, program around it.",
             "equipment": "Bounds what can be programmed at all.",
-            "target": "Work toward it. Call out when a plan falls short.",
+            "target": "Work toward it. Call out when a session or week falls short.",
             "preference": "Default to it. Deviating is fine with a stated reason.",
             "observation": "Context Blake taught you. Weigh it, don't obey it.",
         },
         "rules": grouped,
         "active_rule_count": len(active),
-        "active_plan": plan,
+        "routine_library": [
+            {
+                "id": r["id"],
+                "name": r["name"],
+                "focus": r["focus"],
+                "estimated_minutes": r["estimated_minutes"],
+            }
+            for r in routines
+        ],
         "capture_reminder": (
             "If Blake states a durable preference or corrects your programming in "
             "this conversation, call propose_rule so it survives the session."
@@ -664,9 +717,15 @@ def get_context() -> dict:
         out["awaiting_confirmation"] = [
             {"id": r["id"], "rule": r["rule"], "rule_type": r["rule_type"]} for r in proposed
         ]
-    if not plan:
-        out["active_plan_note"] = (
-            "No saved plan. If you build a program with Blake, call save_training_plan "
-            "so he doesn't have to rebuild it next session."
+    if routines:
+        out["routine_note"] = (
+            "Call get_training_routine for the full block structure of any of these. "
+            "Blake trains week to week, so pick or adapt from this library rather "
+            "than building a multi-week schedule."
+        )
+    else:
+        out["routine_note"] = (
+            "No saved routines. If Blake settles on a session he likes, call "
+            "save_training_routine so he can reuse it."
         )
     return out

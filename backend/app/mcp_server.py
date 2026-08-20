@@ -3,7 +3,7 @@
 Exposes coaching tools over the synced Garmin data in fitness.db so a remote MCP
 client (Claude chat on desktop or Android) can answer any fitness question. Chat
 is the primary interface for this data, so the server carries more than queries:
-it also holds Blake's training policy and the programs built with him.
+it also holds Blake's training policy and the routines he reuses.
 
 Three groups of tools:
 
@@ -13,7 +13,8 @@ Three groups of tools:
   activity_parser.py. These deliberately do NOT use the old in-app chat coach.
 * **Rules**: Blake's durable training constraints and preferences. Read via
   get_coaching_context, extended through conversation via propose_rule.
-* **Plans**: programs saved so they outlive the chat that produced them.
+* **Routines**: a library of sessions Blake reuses, saved so they outlive
+  the chat that produced them. A library, not a schedule.
 
 The split that makes this work: the `instructions` string below carries the
 *protocol* (what to always do) and changes only on deploy, while the database
@@ -46,13 +47,13 @@ mcp = FastMCP(
     name="GarminSights",
     instructions=(
         "You are Blake's strength and endurance coach. This server holds his Garmin "
-        "history, his training rules, and his saved programs.\n"
+        "history, his training rules, and the routines he reuses.\n"
         "\n"
         "PROTOCOL, follow it in this order:\n"
         "1. Call sync_garmin_data before answering any question about workouts, "
         "sleep, or wellness, so the data is current. Sync first, then query.\n"
         "2. Before you program, plan, or answer 'what should I train', call "
-        "get_coaching_context. It returns Blake's rules and his active plan. "
+        "get_coaching_context. It returns Blake's rules and his routine library. "
         "Constraints and limitations in it are binding; preferences are defaults you "
         "may deviate from with a stated reason. Never ask Blake to re-state a rule "
         "that this tool already returns.\n"
@@ -63,9 +64,15 @@ mcp = FastMCP(
         "call propose_rule and show him the proposal. It only takes effect once he "
         "says yes and you call confirm_rule. Do not save passing remarks, only rules "
         "he would want applied months from now.\n"
-        "5. When you build a program with him, call save_training_plan so it "
-        "survives the conversation. Revise with update_training_plan rather than "
-        "rebuilding from scratch.\n"
+        "5. Blake trains week to week, not on a schedule. He keeps a library of "
+        "routines he likes. When he asks what to train, or how to fill the time "
+        "he has, call list_training_routines (pass max_minutes when he gives you "
+        "a window), check the week's volume gaps, and suggest the routine that "
+        "fills the biggest one. Adapt it to his recovery rather than inventing a "
+        "session from nothing. Do not build multi-week programs unless he asks.\n"
+        "6. When he settles on a session he likes, call save_training_routine so "
+        "he can reuse it. Revise an existing routine with update_training_routine "
+        "rather than saving a near-duplicate.\n"
         "\n"
         "DATA NOTES: prefer the curated tools; use describe_data + run_sql for "
         "anything granular (e.g. rest times, a specific muscle, custom date slices). "
@@ -996,8 +1003,8 @@ def get_recovery_status() -> dict:
 
 @mcp.tool
 def get_coaching_context() -> dict:
-    """Blake's training rules and his active plan. CALL THIS BEFORE PROGRAMMING,
-    planning a session, or answering "what should I train today".
+    """Blake's training rules and his routine library. CALL THIS BEFORE
+    PROGRAMMING, planning a session, or answering "what should I train today".
 
     Returns rules grouped by type, with a how_to_apply key explaining how binding
     each type is: constraints and limitations must be obeyed, equipment bounds
@@ -1124,112 +1131,122 @@ def review_rules() -> dict:
 
 
 # ----------------------------------------------------------------------------
-# Training plans: programs that outlive the conversation
+# Routine library: sessions Blake reuses
 # ----------------------------------------------------------------------------
 
 @mcp.tool
-def get_active_training_plan() -> dict:
-    """The training program currently in effect, if one has been saved. Check
-    this before building anything new, so you revise the existing program
-    instead of replacing it by accident.
-    """
-    plan = coaching_store.get_active_plan()
-    if plan is None:
-        return {
-            "active_plan": None,
-            "note": "No saved plan. Build one with Blake and call save_training_plan.",
-        }
-    return {"active_plan": plan}
-
-
-@mcp.tool
-def list_training_plans(include_archived: bool = False) -> dict:
-    """List saved training plans (metadata only, no day-by-day detail). Use
-    get_active_training_plan for the current program's full structure.
-    """
-    plans = coaching_store.list_plans(include_archived=include_archived)
-    return {"count": len(plans), "plans": plans}
-
-
-@mcp.tool
-def save_training_plan(
-    name: str,
-    plan: dict,
-    goal: str | None = None,
-    days_per_week: int | None = None,
-    starts_on: str | None = None,
-    ends_on: str | None = None,
-    notes: str | None = None,
-    status: str = "active",
+def list_training_routines(
+    focus: str | None = None,
+    max_minutes: int | None = None,
+    include_archived: bool = False,
 ) -> dict:
-    """Save a program you built with Blake so it outlives this conversation.
+    """Blake's library of saved sessions, with their full block structure.
 
-    Saving an active plan archives whichever plan was active before, so there is
-    always exactly one current program. Use status='draft' to park an option
-    without displacing the current plan.
-
-    The plan is checked against the constraints that can be verified from its
-    structure (currently the squat/hinge separation rule). Violations come back
-    as rule_warnings and the plan still saves, so raise them with Blake.
+    This is a library, not a schedule. He trains week to week, so several
+    routines are active at once and the right one depends on the time he has
+    and what needs volume. When he asks what to train, list these, cross-check
+    get_muscle_group_volume for the week's gaps, and suggest the routine that
+    fills the biggest one.
 
     Args:
-        name: Short name, e.g. "Aug 2026 upper/lower".
-        plan: {"days": [{"day": "Monday", "focus": "Lower (squat anchor)",
-            "blocks": [{"type": "straight"|"superset", "exercises": [
-            {"name": "Barbell Back Squat", "sets": 4, "reps": "5-8",
-            "notes": "optional"}]}]}]}. Put antagonist pairs in one block with
-            type "superset"; solo compounds get their own "straight" block.
-        goal: What the block of training is for.
-        days_per_week: Defaults to the number of days in the plan.
-        starts_on / ends_on: YYYY-MM-DD, optional.
-        notes: Anything that did not fit the structure.
-        status: active (default) or draft.
+        focus: upper, lower, full, push, pull, accessory, conditioning.
+        max_minutes: Only routines that fit this window. Routines with no
+            estimate are included, since unknown length is not a known overrun.
+        include_archived: Include routines he has stopped using.
     """
-    return coaching_store.save_plan(
-        name=name,
-        plan=plan,
-        goal=goal,
-        days_per_week=days_per_week,
-        starts_on=starts_on,
-        ends_on=ends_on,
-        notes=notes,
-        status=status,
+    if focus and focus not in coaching_store.ROUTINE_FOCUSES:
+        return {"error": f"Unknown focus. Use one of: {', '.join(coaching_store.ROUTINE_FOCUSES)}."}
+
+    routines = coaching_store.list_routines(
+        focus=focus, max_minutes=max_minutes, include_archived=include_archived
     )
+    return {"count": len(routines), "routines": routines}
 
 
 @mcp.tool
-def update_training_plan(
-    plan_id: int,
-    name: str | None = None,
-    plan: dict | None = None,
+def get_training_routine(routine_id: int) -> dict:
+    """One saved routine in full, by ID."""
+    routine = coaching_store.get_routine(routine_id)
+    if routine is None:
+        return {"error": f"No routine with id {routine_id}."}
+    return {"routine": routine}
+
+
+@mcp.tool
+def save_training_routine(
+    name: str,
+    blocks: list,
+    focus: str = "full",
     goal: str | None = None,
-    days_per_week: int | None = None,
-    starts_on: str | None = None,
-    ends_on: str | None = None,
+    estimated_minutes: int | None = None,
     notes: str | None = None,
 ) -> dict:
-    """Revise a saved plan. Pass only the fields that change. Prefer this over
-    saving a whole new plan when Blake is tweaking the current program, so the
-    plan keeps its identity and history.
+    """Save a session Blake likes so he can reuse it. Call this when he settles
+    on a routine that works, not for every session you suggest.
+
+    Saving does not displace anything: the library holds several routines at
+    once. If he is tweaking one he already has, call update_training_routine
+    instead of saving a near-duplicate.
+
+    The routine is checked against the constraints that can be verified from
+    its structure (squat/hinge separation, and the session length cap when an
+    estimate is given). Violations come back as rule_warnings and the routine
+    still saves, so raise them with Blake.
+
+    Args:
+        name: Short and distinctive, e.g. "Upper A (cage + cables)".
+        blocks: [{"type": "straight"|"superset", "exercises": [
+            {"name": "Barbell Bench Press", "sets": 4, "reps": "6-8",
+            "notes": "optional"}]}]. Put antagonist pairs in one block typed
+            "superset"; solo compounds get their own "straight" block. Order
+            matters, blocks run top to bottom.
+        focus: upper, lower, full, push, pull, accessory, conditioning.
+        goal: What this session is for.
+        estimated_minutes: How long it takes, if known. Enables the length check
+            and lets Blake filter by the time he has.
+        notes: Anything that did not fit the structure.
     """
-    return coaching_store.update_plan(
-        plan_id=plan_id,
+    return coaching_store.save_routine(
         name=name,
-        plan=plan,
+        blocks=blocks,
+        focus=focus,
         goal=goal,
-        days_per_week=days_per_week,
-        starts_on=starts_on,
-        ends_on=ends_on,
+        estimated_minutes=estimated_minutes,
         notes=notes,
     )
 
 
 @mcp.tool
-def archive_training_plan(plan_id: int, reason: str | None = None) -> dict:
-    """Retire a training plan. It stays queryable via
-    list_training_plans(include_archived=True).
+def update_training_routine(
+    routine_id: int,
+    name: str | None = None,
+    blocks: list | None = None,
+    focus: str | None = None,
+    goal: str | None = None,
+    estimated_minutes: int | None = None,
+    notes: str | None = None,
+) -> dict:
+    """Revise a saved routine. Pass only the fields that change. Prefer this over
+    saving a new routine when Blake is tweaking one he already uses, so the
+    library does not fill up with variants of the same session.
     """
-    return coaching_store.archive_plan(plan_id, reason)
+    return coaching_store.update_routine(
+        routine_id=routine_id,
+        name=name,
+        blocks=blocks,
+        focus=focus,
+        goal=goal,
+        estimated_minutes=estimated_minutes,
+        notes=notes,
+    )
+
+
+@mcp.tool
+def archive_training_routine(routine_id: int, reason: str | None = None) -> dict:
+    """Retire a routine Blake has stopped using. It stays queryable via
+    list_training_routines(include_archived=True).
+    """
+    return coaching_store.archive_routine(routine_id, reason)
 
 
 # ----------------------------------------------------------------------------
@@ -1245,7 +1262,7 @@ def describe_data() -> dict:
     counts = {}
     for table in (
         "activities", "sleep", "dailies", "strength_sets",
-        "coaching_rules", "training_plans",
+        "coaching_rules", "training_routines",
     ):
         rows = execute_query(f"SELECT COUNT(*) AS c FROM {table}")
         counts[table] = rows[0]["c"] if rows else 0
@@ -1280,9 +1297,9 @@ def describe_data() -> dict:
             "duration_seconds is the rest length.",
             "Activity-level power/HR/zones live in activities.raw_json; use "
             "get_activity_detail to parse them.",
-            "coaching_rules and training_plans hold Blake's policy and saved "
-            "programs. Read them through get_coaching_context, not run_sql, and "
-            "write them only through the dedicated rule/plan tools.",
+            "coaching_rules and training_routines hold Blake's policy and the "
+            "sessions he reuses. Read them through get_coaching_context, not "
+            "run_sql, and write them only through the dedicated tools.",
         ],
     }
 
