@@ -1322,6 +1322,10 @@ def sync_garmin_data(days_back: int = 7) -> dict:
     }
     if result.error:
         out["error"] = result.error
+    # Flag the auth case explicitly so the chat client tells Blake to re-login
+    # instead of guessing at why the sync came back empty.
+    if (result.details or {}).get("auth_required"):
+        out["auth_required"] = True
     if result.warnings:
         out["warnings"] = result.warnings
     return out

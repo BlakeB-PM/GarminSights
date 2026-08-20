@@ -178,6 +178,37 @@ Until a test framework is set up, validate backend changes by running the dev se
 - **AI Coach model:** Always respect the `COACH_MODEL` environment variable (defaulting to `claude-sonnet-4-6`). Never hardcode a model name in `coach_service.py`.
 - Follow PEP 8. Use type hints throughout.
 
+### Garmin Session & Tokens
+
+The Garmin client is a process-local singleton (`GarminService._client`), but the
+tokens behind it live on disk at `GARTH_TOKENS_PATH` (`/data/.garth_tokens` on
+Fly, on the mounted volume). Every fresh process therefore starts with
+`_client = None` even though the tokens are perfectly valid, and Fly runs with
+`auto_stop_machines = 'stop'` / `min_machines_running = 0`, so cold starts are
+the normal case, not an edge case.
+
+- **Never gate work on `garmin_service._client` directly.** Call
+  `GarminService.ensure_client()`, which rehydrates from the token directory,
+  refreshes an expired OAuth2 token off the long-lived OAuth1 token, and only
+  then falls back to a credential login. It returns `(ready, error_message)`.
+  A previous bug came from exactly this: the REST routes rehydrated as a side
+  effect of their `check_session()` gate, the MCP tools called straight into
+  `SyncService`, and every MCP sync on a cold machine failed with "Garmin client
+  not authenticated. Please login first."
+- **A rejected token must raise `GarminAuthError`, not return empty.** The
+  `fetch_*` helpers swallow ordinary errors so one bad day doesn't kill a sync,
+  but they re-raise 401/403 as `GarminAuthError` and the sync loops let it
+  through. Otherwise a dead token looks identical to "Garmin has no data for
+  these dates", which is the hardest version of this bug to diagnose.
+- `SyncStatus.details["auth_required"]` marks the auth case, and
+  `sync_garmin_data` copies it to `auth_required` in its MCP response so the
+  chat client says "re-login" instead of guessing.
+- **Credential re-login is throttled** (`CREDENTIAL_LOGIN_COOLDOWN_SECONDS`).
+  Garmin locks accounts that retry logins in a loop, and an MFA-protected
+  account can't complete one headlessly anyway, so the fallback exists to cover
+  the no-MFA case and otherwise return a "finish the login in the browser"
+  message.
+
 ### Frontend (TypeScript / React)
 
 - **Language:** TypeScript with strict mode. Fix type errors; do not use `any` or `// @ts-ignore` as a shortcut.
