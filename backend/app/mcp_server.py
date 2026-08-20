@@ -1,12 +1,25 @@
 """GarminSights MCP server.
 
-Exposes read-only coaching tools over the synced Garmin data in fitness.db so a
-remote MCP client (e.g. Claude on Android) can answer any fitness question.
+Exposes coaching tools over the synced Garmin data in fitness.db so a remote MCP
+client (Claude chat on desktop or Android) can answer any fitness question. Chat
+is the primary interface for this data, so the server carries more than queries:
+it also holds Blake's training policy and the programs built with him.
 
-Tools are self-contained queries against the SQLite tables (activities, sleep,
-dailies, strength_sets). They reuse the curated reference tables in
-muscle_mapping.py / rep_ranges.py and the raw_json parser in activity_parser.py,
-but deliberately do NOT use the old in-app chat coach.
+Three groups of tools:
+
+* **Data** (read-only): self-contained queries against activities, sleep,
+  dailies and strength_sets, reusing the curated reference tables in
+  muscle_mapping.py / rep_ranges.py and the raw_json parser in
+  activity_parser.py. These deliberately do NOT use the old in-app chat coach.
+* **Rules**: Blake's durable training constraints and preferences. Read via
+  get_coaching_context, extended through conversation via propose_rule.
+* **Plans**: programs saved so they outlive the chat that produced them.
+
+The split that makes this work: the `instructions` string below carries the
+*protocol* (what to always do) and changes only on deploy, while the database
+carries the *content* (the actual rules) and changes by talking to the server.
+Putting rules in the instructions would mean a deploy for every lesson learned.
+See services/coaching_store.py for the storage layer.
 """
 
 import re
@@ -25,20 +38,38 @@ from app.services.muscle_mapping import (
     get_primary_muscle_group,
 )
 from app.services.rep_ranges import classify_rep_range
+from app.services import coaching_store
 
 logger = logging.getLogger(__name__)
 
 mcp = FastMCP(
     name="GarminSights",
     instructions=(
-        "Personal Garmin fitness data for coaching Blake on lifting, cycling, and "
-        "recovery. Activities, strength sets (including rest periods), cycling power, "
-        "sleep, and daily wellness are all queryable. Prefer the curated tools; use "
-        "describe_data + run_sql for anything granular (e.g. rest times, a specific "
-        "muscle, custom date slices). All weights are in pounds (lbs); durations are "
-        "in seconds unless noted. Always call sync_garmin_data before answering any "
-        "question about workouts, sleep, or wellness — this ensures the data is "
-        "current. Sync first, then query."
+        "You are Blake's strength and endurance coach. This server holds his Garmin "
+        "history, his training rules, and his saved programs.\n"
+        "\n"
+        "PROTOCOL, follow it in this order:\n"
+        "1. Call sync_garmin_data before answering any question about workouts, "
+        "sleep, or wellness, so the data is current. Sync first, then query.\n"
+        "2. Before you program, plan, or answer 'what should I train', call "
+        "get_coaching_context. It returns Blake's rules and his active plan. "
+        "Constraints and limitations in it are binding; preferences are defaults you "
+        "may deviate from with a stated reason. Never ask Blake to re-state a rule "
+        "that this tool already returns.\n"
+        "3. When programming, audit before prescribing: get_training_frequency and "
+        "get_muscle_group_volume to find undertrained muscle groups, then "
+        "get_recovery_status to set intensity. Then build the session.\n"
+        "4. When Blake states a durable preference, or corrects your programming, "
+        "call propose_rule and show him the proposal. It only takes effect once he "
+        "says yes and you call confirm_rule. Do not save passing remarks, only rules "
+        "he would want applied months from now.\n"
+        "5. When you build a program with him, call save_training_plan so it "
+        "survives the conversation. Revise with update_training_plan rather than "
+        "rebuilding from scratch.\n"
+        "\n"
+        "DATA NOTES: prefer the curated tools; use describe_data + run_sql for "
+        "anything granular (e.g. rest times, a specific muscle, custom date slices). "
+        "All weights are in pounds (lbs); durations are in seconds unless noted."
     ),
 )
 
@@ -960,6 +991,248 @@ def get_recovery_status() -> dict:
 
 
 # ----------------------------------------------------------------------------
+# Coaching rules: Blake's durable training policy
+# ----------------------------------------------------------------------------
+
+@mcp.tool
+def get_coaching_context() -> dict:
+    """Blake's training rules and his active plan. CALL THIS BEFORE PROGRAMMING,
+    planning a session, or answering "what should I train today".
+
+    Returns rules grouped by type, with a how_to_apply key explaining how binding
+    each type is: constraints and limitations must be obeyed, equipment bounds
+    what is possible, targets are goals to work toward, preferences are defaults
+    you may deviate from with a stated reason, observations are context.
+
+    This is the single source of truth for how Blake wants to train. Never ask
+    him to re-state something this returns.
+    """
+    return coaching_store.get_context()
+
+
+@mcp.tool
+def get_coaching_rules(
+    rule_type: str | None = None,
+    scope: str | None = None,
+    status: str = "active",
+) -> dict:
+    """List coaching rules with their IDs, for reviewing or editing them by hand.
+
+    Use get_coaching_context instead when you just need the rules to program
+    against. Use this one when Blake asks what rules exist, or when you need an
+    ID to pass to update_rule or retire_rule.
+
+    Args:
+        rule_type: constraint, limitation, equipment, target, preference, observation.
+        scope: strength, cycling, cardio, recovery, nutrition, global.
+        status: active (default), proposed, retired, or all.
+    """
+    if rule_type and rule_type not in coaching_store.RULE_TYPES:
+        return {"error": f"Unknown rule_type. Use one of: {', '.join(coaching_store.RULE_TYPES)}."}
+    if scope and scope not in coaching_store.RULE_SCOPES:
+        return {"error": f"Unknown scope. Use one of: {', '.join(coaching_store.RULE_SCOPES)}."}
+    if status not in coaching_store.RULE_STATUSES + ("all",):
+        return {"error": "status must be active, proposed, retired, or all."}
+
+    rules = coaching_store.list_rules(rule_type=rule_type, scope=scope, status=status)
+    return {"count": len(rules), "rules": rules}
+
+
+@mcp.tool
+def propose_rule(
+    rule: str,
+    rule_type: str,
+    scope: str = "strength",
+    rationale: str | None = None,
+    supersedes_id: int | None = None,
+) -> dict:
+    """Capture something Blake taught you, so it survives this conversation.
+
+    Call this when he states a durable training preference or corrects your
+    programming. The rule is saved as "proposed" and does NOT take effect until
+    you show it to him and he agrees, at which point you call confirm_rule.
+
+    Only propose rules Blake would want applied months from now. A passing
+    complaint about a session is not a rule.
+
+    Args:
+        rule: The rule itself, phrased as an instruction to a coach.
+        rule_type: constraint (hard), limitation (injury), equipment,
+            target (numeric goal), preference (soft default), or
+            observation (learned pattern, context only).
+        scope: strength, cycling, cardio, recovery, nutrition, global.
+        rationale: Why this rule exists. Worth capturing, it prevents the rule
+            being retired later for the wrong reason.
+        supersedes_id: If this replaces an existing rule, its ID. Confirming
+            the new rule retires the old one in the same step.
+    """
+    return coaching_store.propose_rule(
+        rule=rule,
+        rule_type=rule_type,
+        scope=scope,
+        rationale=rationale,
+        supersedes_id=supersedes_id,
+    )
+
+
+@mcp.tool
+def confirm_rule(rule_id: int) -> dict:
+    """Activate a proposed rule after Blake has agreed to it. Only call this once
+    he has actually said yes. If the rule supersedes another, the old one is
+    retired automatically.
+    """
+    return coaching_store.confirm_rule(rule_id)
+
+
+@mcp.tool
+def update_rule(
+    rule_id: int,
+    rule: str | None = None,
+    rule_type: str | None = None,
+    scope: str | None = None,
+    rationale: str | None = None,
+) -> dict:
+    """Edit an existing rule in place. Use this for wording and classification
+    fixes. When the substance of a rule changes, prefer propose_rule with
+    supersedes_id so the history of what changed stays on the record.
+    """
+    return coaching_store.update_rule(
+        rule_id=rule_id,
+        rule=rule,
+        rule_type=rule_type,
+        scope=scope,
+        rationale=rationale,
+    )
+
+
+@mcp.tool
+def retire_rule(rule_id: int, reason: str) -> dict:
+    """Retire a rule that no longer applies. Nothing is deleted: retired rules
+    stay queryable via get_coaching_rules(status='retired'). Always record why.
+    """
+    return coaching_store.retire_rule(rule_id, reason)
+
+
+@mcp.tool
+def review_rules() -> dict:
+    """Surface the rule set for pruning: what is awaiting Blake's confirmation,
+    what has not been touched in a year, and which rules share a type and scope
+    and may be fighting each other. Overlap is a prompt to read, not a detected
+    conflict. Ask Blake before retiring anything.
+    """
+    return coaching_store.review_rules()
+
+
+# ----------------------------------------------------------------------------
+# Training plans: programs that outlive the conversation
+# ----------------------------------------------------------------------------
+
+@mcp.tool
+def get_active_training_plan() -> dict:
+    """The training program currently in effect, if one has been saved. Check
+    this before building anything new, so you revise the existing program
+    instead of replacing it by accident.
+    """
+    plan = coaching_store.get_active_plan()
+    if plan is None:
+        return {
+            "active_plan": None,
+            "note": "No saved plan. Build one with Blake and call save_training_plan.",
+        }
+    return {"active_plan": plan}
+
+
+@mcp.tool
+def list_training_plans(include_archived: bool = False) -> dict:
+    """List saved training plans (metadata only, no day-by-day detail). Use
+    get_active_training_plan for the current program's full structure.
+    """
+    plans = coaching_store.list_plans(include_archived=include_archived)
+    return {"count": len(plans), "plans": plans}
+
+
+@mcp.tool
+def save_training_plan(
+    name: str,
+    plan: dict,
+    goal: str | None = None,
+    days_per_week: int | None = None,
+    starts_on: str | None = None,
+    ends_on: str | None = None,
+    notes: str | None = None,
+    status: str = "active",
+) -> dict:
+    """Save a program you built with Blake so it outlives this conversation.
+
+    Saving an active plan archives whichever plan was active before, so there is
+    always exactly one current program. Use status='draft' to park an option
+    without displacing the current plan.
+
+    The plan is checked against the constraints that can be verified from its
+    structure (currently the squat/hinge separation rule). Violations come back
+    as rule_warnings and the plan still saves, so raise them with Blake.
+
+    Args:
+        name: Short name, e.g. "Aug 2026 upper/lower".
+        plan: {"days": [{"day": "Monday", "focus": "Lower (squat anchor)",
+            "blocks": [{"type": "straight"|"superset", "exercises": [
+            {"name": "Barbell Back Squat", "sets": 4, "reps": "5-8",
+            "notes": "optional"}]}]}]}. Put antagonist pairs in one block with
+            type "superset"; solo compounds get their own "straight" block.
+        goal: What the block of training is for.
+        days_per_week: Defaults to the number of days in the plan.
+        starts_on / ends_on: YYYY-MM-DD, optional.
+        notes: Anything that did not fit the structure.
+        status: active (default) or draft.
+    """
+    return coaching_store.save_plan(
+        name=name,
+        plan=plan,
+        goal=goal,
+        days_per_week=days_per_week,
+        starts_on=starts_on,
+        ends_on=ends_on,
+        notes=notes,
+        status=status,
+    )
+
+
+@mcp.tool
+def update_training_plan(
+    plan_id: int,
+    name: str | None = None,
+    plan: dict | None = None,
+    goal: str | None = None,
+    days_per_week: int | None = None,
+    starts_on: str | None = None,
+    ends_on: str | None = None,
+    notes: str | None = None,
+) -> dict:
+    """Revise a saved plan. Pass only the fields that change. Prefer this over
+    saving a whole new plan when Blake is tweaking the current program, so the
+    plan keeps its identity and history.
+    """
+    return coaching_store.update_plan(
+        plan_id=plan_id,
+        name=name,
+        plan=plan,
+        goal=goal,
+        days_per_week=days_per_week,
+        starts_on=starts_on,
+        ends_on=ends_on,
+        notes=notes,
+    )
+
+
+@mcp.tool
+def archive_training_plan(plan_id: int, reason: str | None = None) -> dict:
+    """Retire a training plan. It stays queryable via
+    list_training_plans(include_archived=True).
+    """
+    return coaching_store.archive_plan(plan_id, reason)
+
+
+# ----------------------------------------------------------------------------
 # Escape hatch: schema + read-only SQL
 # ----------------------------------------------------------------------------
 
@@ -970,7 +1243,10 @@ def describe_data() -> dict:
     Call this before run_sql to know exactly which tables and columns exist.
     """
     counts = {}
-    for table in ("activities", "sleep", "dailies", "strength_sets"):
+    for table in (
+        "activities", "sleep", "dailies", "strength_sets",
+        "coaching_rules", "training_plans",
+    ):
         rows = execute_query(f"SELECT COUNT(*) AS c FROM {table}")
         counts[table] = rows[0]["c"] if rows else 0
 
@@ -1004,6 +1280,9 @@ def describe_data() -> dict:
             "duration_seconds is the rest length.",
             "Activity-level power/HR/zones live in activities.raw_json; use "
             "get_activity_detail to parse them.",
+            "coaching_rules and training_plans hold Blake's policy and saved "
+            "programs. Read them through get_coaching_context, not run_sql, and "
+            "write them only through the dedicated rule/plan tools.",
         ],
     }
 

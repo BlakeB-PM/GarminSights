@@ -23,10 +23,12 @@ GarminSights/
 │   │   ├── database.py       # SQLite init & connection helpers
 │   │   ├── migrations.py     # Schema migration logic (run at startup)
 │   │   ├── middleware.py     # CORS and request middleware
+│   │   ├── mcp_server.py     # MCP server (tools for Claude chat); mounted at /<MCP_SECRET>/mcp
 │   │   ├── models/
 │   │   │   └── schemas.py    # Pydantic request/response models
 │   │   ├── routers/          # One file per feature area (auth, sync, activities, etc.)
 │   │   └── services/         # Business logic (Garmin API, AI coach, parsers)
+│   │       └── coaching_store.py  # Coaching rules + saved training plans
 │   ├── requirements.txt
 │   └── env.example.txt
 ├── frontend/                 # React + TypeScript + Vite SPA
@@ -218,6 +220,55 @@ In production, the FastAPI app also serves the built React SPA from `frontend/di
 
 ---
 
+## MCP Server
+
+`backend/app/mcp_server.py` exposes the fitness data to Claude chat as a remote MCP
+connector (FastMCP, Streamable HTTP). It is mounted at `/<MCP_SECRET>/mcp` and gated
+by the secret path segment in `middleware.py`. Claude chat is the primary interface
+for this data, so the server carries policy and saved programs, not just queries.
+
+Three groups of tools:
+
+| Group | Tools | Storage |
+|-------|-------|---------|
+| Data (read-only) | `get_fitness_summary`, `get_training_frequency`, `run_sql`, etc. | `activities`, `sleep`, `dailies`, `strength_sets` |
+| Rules | `get_coaching_context`, `propose_rule`, `confirm_rule`, `update_rule`, `retire_rule`, `review_rules` | `coaching_rules` |
+| Plans | `save_training_plan`, `get_active_training_plan`, `update_training_plan`, `archive_training_plan` | `training_plans` |
+
+### The protocol/content split
+
+The FastMCP `instructions` string carries the **protocol** (what the model should
+always do: sync first, load context before programming, propose rules when Blake
+teaches something). The database carries the **content** (the actual rules).
+
+Keep it that way. Rules in the instructions string would mean a deploy for every
+lesson learned, which defeats the point. When you need to change *how* the coach
+behaves, edit `instructions`. When you need to change *what* it believes about
+Blake's training, that is a database write through the rule tools.
+
+### Rule semantics
+
+Rules are typed, and the type determines how binding they are:
+`constraint` and `limitation` are binding, `equipment` bounds what is possible,
+`target` is a goal, `preference` is a default that can be deviated from with a
+stated reason, `observation` is context only.
+
+Rules are **retired, never deleted**. `propose_rule` writes `status='proposed'`
+and only `confirm_rule` activates it, so Blake approves every learned rule before
+it takes effect.
+
+The initial rule set is seeded by migration 4 from Blake's `fitness` skill in the
+personal-os vault, and only when `coaching_rules` is empty. That skill is now a
+pointer to this server: the rules live here, not there.
+
+### Training plans
+
+`training_plans.plan_json` holds the day/block structure; a partial unique index
+enforces at most one `status='active'` plan, so saving a new active plan archives
+the previous one. `save_training_plan` checks the plan against the constraints that
+are structurally checkable (currently squat/hinge separation) and returns
+`rule_warnings` without blocking the save.
+
 ## Deployment
 
 Deployments are triggered automatically by pushing to `main` via GitHub Actions (`.github/workflows/deploy.yml`), which runs `flyctl deploy --remote-only` to Fly.io.
@@ -236,6 +287,12 @@ The production app runs at `https://garminsights.blakebeal.com`.
 - **Do not change `fly.toml`** without explicit instruction — it controls the production deployment.
 - **Do not hardcode the Anthropic model name** in `coach_service.py`. Always use the `COACH_MODEL` setting.
 - **Do not add `any` types or `// @ts-ignore`** to silence TypeScript errors; fix the underlying type issue.
+- **Do not delete rows from `coaching_rules` or `training_plans`.** These are Blake's
+  data, captured in conversation and not recoverable from Garmin. Retire and archive
+  instead; both tables keep retired rows on purpose.
+- **Do not move the coaching rules into the MCP `instructions` string.** That string
+  is the protocol and only changes on deploy; the rules must stay editable by talking
+  to the server.
 - **Do not modify `migrations.py` to drop or rename columns** without explicit instruction — this can destroy user data.
 - **Do not run `flyctl deploy`** or any command that affects the production environment unless explicitly instructed.
 - **Do not install new Python or npm packages** without confirming with the user — the dependency list is intentionally minimal.
