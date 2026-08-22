@@ -58,7 +58,10 @@ mcp = FastMCP(
         "that this tool already returns.\n"
         "3. When programming, audit before prescribing: get_training_frequency and "
         "get_muscle_group_volume to find undertrained muscle groups, then "
-        "get_recovery_status to set intensity. Then build the session.\n"
+        "get_daily_wellness and get_sleep for recent sleep, Body Battery, and "
+        "stress. Read readiness off those numbers yourself and set intensity from "
+        "it, ignoring days that have not finished syncing. Then build the "
+        "session.\n"
         "4. When Blake states a durable preference, or corrects your programming, "
         "call propose_rule and show him the proposal. It only takes effect once he "
         "says yes and you call confirm_rule. Do not save passing remarks, only rules "
@@ -267,83 +270,6 @@ def get_activity_breakdown(days: int = 30) -> dict:
             "minutes": sum(r["minutes"] for r in rows),
             "calories": sum(r["calories"] for r in rows),
         },
-    }
-
-
-@mcp.tool
-def get_training_load(acute_days: int = 7, chronic_days: int = 28) -> dict:
-    """Acute vs chronic training load and the acute:chronic ratio with a status
-    band (under/optimal/caution/danger). Load = sum(minutes * intensity factor),
-    where intensity is derived from activity type and calories/minute.
-    """
-    acute_days = max(1, min(acute_days, 60))
-    chronic_days = max(7, min(chronic_days, 120))
-    now = datetime.now()
-    acute_start = (now - timedelta(days=acute_days)).strftime("%Y-%m-%d")
-    chronic_start = (now - timedelta(days=chronic_days)).strftime("%Y-%m-%d")
-    end = now.strftime("%Y-%m-%d")
-
-    type_factors = {
-        "strength_training": 1.5,
-        "running": 1.3,
-        "treadmill_running": 1.3,
-        "cycling": 1.2,
-        "virtual_ride": 1.2,
-        "indoor_cycling": 1.2,
-        "swimming": 1.2,
-        "hiking": 1.1,
-        "walking": 0.8,
-        "yoga": 0.7,
-    }
-
-    def _load(start: str) -> float:
-        rows = execute_query(
-            """
-            SELECT COALESCE(duration_seconds, 0) AS dur,
-                   COALESCE(calories, 0) AS cal,
-                   activity_type
-            FROM activities
-            WHERE DATE(start_time) >= ? AND DATE(start_time) <= ?
-              AND COALESCE(duration_seconds, 0) > 0
-            """,
-            (start, end),
-        )
-        total = 0.0
-        for r in rows:
-            minutes = r["dur"] / 60
-            cpm = (r["cal"] / minutes) if minutes else 0
-            mult = 1.5 if cpm > 10 else 1.2 if cpm > 7 else 1.0 if cpm > 4 else 0.8
-            total += minutes * type_factors.get(r["activity_type"] or "", 1.0) * mult
-        return total
-
-    acute = _load(acute_start)
-    chronic_total = _load(chronic_start)
-    chronic = chronic_total / chronic_days if chronic_total else 0.0
-
-    if chronic == 0 and acute > 0:
-        chronic, ratio = acute, 1.0
-    else:
-        ratio = (acute / chronic) if chronic else 0.0
-
-    if acute == 0 and chronic == 0:
-        status, rec = "no_data", "No training data in this window."
-    elif ratio < 0.8:
-        status, rec = "under_training", "Below optimal; room to add volume gradually."
-    elif ratio <= 1.3:
-        status, rec = "optimal", "Load is in the sweet spot; maintain."
-    elif ratio <= 1.5:
-        status, rec = "caution", "Elevated load; watch recovery, consider a lighter day."
-    else:
-        status, rec = "danger", "Very high load; high injury risk, consider a deload."
-
-    return {
-        "acute_load": _round(acute),
-        "chronic_load": _round(chronic),
-        "acute_chronic_ratio": _round(ratio, 2),
-        "acute_days": acute_days,
-        "chronic_days": chronic_days,
-        "status": status,
-        "recommendation": rec,
     }
 
 
@@ -928,66 +854,6 @@ def get_stress_distribution(days: int = 7) -> dict:
         (_start_date(days),),
     )
     return {"period_days": days, **(rows[0] if rows else {})}
-
-
-@mcp.tool
-def get_recovery_status() -> dict:
-    """Composite recovery readout from the latest day: a 0-100 recovery score
-    (sleep 40%, Body Battery 40%, inverse stress 20%, slight HRV adjustment) with
-    a status band and the underlying numbers plus a short recent trend.
-    """
-    trend = execute_query(
-        """
-        SELECT d.date, d.body_battery_high, d.body_battery_low, d.stress_average,
-               s.sleep_score, s.hrv_average
-        FROM dailies d LEFT JOIN sleep s ON d.date = s.date
-        ORDER BY d.date DESC LIMIT 3
-        """,
-    )
-    if not trend:
-        return {"status": "unknown", "message": "No wellness data available."}
-
-    latest = trend[0]
-    seven = execute_query(
-        "SELECT AVG(sleep_score) AS avg FROM sleep WHERE date >= ?",
-        (_start_date(7),),
-    )
-    sleep_7day = seven[0]["avg"] if seven and seven[0]["avg"] else None
-
-    sleep_score = latest.get("sleep_score") or 0
-    body_battery = latest.get("body_battery_high") or 0
-    stress = latest.get("stress_average") or 50
-    hrv = latest.get("hrv_average")
-
-    effective_sleep = (sleep_score * 0.6 + sleep_7day * 0.4) if sleep_7day else sleep_score
-    stress_factor = max(0, 100 - stress) / 100
-    score = effective_sleep * 0.4 + body_battery * 0.4 + stress_factor * 100 * 0.2
-    if hrv and hrv > 0:
-        hrv_factor = min(1.0, max(0, (hrv - 20) / 60))
-        score = score * 0.95 + hrv_factor * 100 * 0.05
-
-    if score >= 80:
-        status, msg = "excellent", "Well recovered; good day for intense training."
-    elif score >= 60:
-        status, msg = "good", "Recovery is good; moderate training recommended."
-    elif score >= 40:
-        status, msg = "fair", "Recovery is moderate; consider lighter activity."
-    else:
-        status, msg = "low", "Recovery is low; rest or very light activity."
-
-    return {
-        "recovery_score": round(score),
-        "status": status,
-        "message": msg,
-        "details": {
-            "sleep_score": sleep_score,
-            "sleep_7day_avg": _round(sleep_7day) if sleep_7day else None,
-            "body_battery_high": body_battery,
-            "stress_average": stress,
-            "hrv_average": _round(hrv) if hrv else None,
-        },
-        "recent_trend": trend,
-    }
 
 
 # ----------------------------------------------------------------------------
