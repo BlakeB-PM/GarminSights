@@ -92,6 +92,63 @@ app.include_router(cycling.router)
 app.mount(MCP_MOUNT_PREFIX, mcp_app)
 
 
+_PWA_RESET_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GarminSights — Resetting</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+         background:#0d1528;color:#e2e8f0;min-height:100vh;display:flex;
+         align-items:center;justify-content:center;padding:24px;text-align:center}
+    .card{background:#1e293b;border-radius:12px;padding:32px;max-width:420px;width:100%}
+    h1{font-size:1.25rem;margin-bottom:12px;color:#f1f5f9}
+    p{color:#94a3b8;font-size:.9rem;line-height:1.5;margin-bottom:20px}
+    a{color:#38bdf8;text-decoration:none;font-size:.875rem}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Resetting GarminSights…</h1>
+    <p>Clearing cached data and service worker. You'll be redirected to the app automatically.</p>
+    <a href="/">Go to app &rarr;</a>
+  </div>
+  <script>
+    (async function(){
+      try{
+        if('serviceWorker' in navigator){
+          var r=await navigator.serviceWorker.getRegistrations();
+          await Promise.all(r.map(function(x){return x.unregister()}));
+        }
+        if('caches' in window){
+          var k=await caches.keys();
+          await Promise.all(k.map(function(c){return caches.delete(c)}));
+        }
+      }catch(_){}
+      window.location.replace('/');
+    })();
+  </script>
+</body>
+</html>"""
+
+
+@app.get("/api/pwa-reset")
+async def pwa_reset():
+    """Unregisters the service worker and clears all caches, then redirects to /.
+
+    Navigating here bypasses the service worker's cache (it never intercepts
+    /api/* paths) and is safe to use whenever the app appears stuck. Useful
+    when a stale service worker is caching a broken build.
+    """
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(
+        content=_PWA_RESET_HTML,
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
+
+
 @app.get("/api/health")
 async def health_check():
     """Detailed health check."""
