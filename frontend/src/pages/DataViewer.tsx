@@ -1,3 +1,4 @@
+import { GarminCoverage } from '../components/GarminCoverage';
 import { useEffect, useState } from 'react';
 import { Header } from '../components/layout/Header';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
@@ -173,19 +174,19 @@ export function DataViewer({ onMenuToggle }: { onMenuToggle?: () => void } = {})
   };
 
   const formatHours = (seconds: number | null | undefined) => {
-    if (!seconds) return '—';
+    if (seconds == null) return '—';
     const hours = seconds / 3600;
     return `${hours.toFixed(1)}h`;
   };
 
   const formatMinutes = (seconds: number | null | undefined) => {
-    if (!seconds) return '—';
+    if (seconds == null) return '—';
     return `${Math.round(seconds / 60)}m`;
   };
 
   const getDataStatus = (record: DayRecord) => {
-    const hasSleep = record.sleep !== null;
-    const hasDaily = record.daily !== null;
+    const hasSleep = (record.sleep?.total_sleep_seconds ?? 0) > 0;
+    const hasDaily = record.daily?.steps != null || record.daily?.resting_heart_rate != null;
     const hasActivities = record.activities.length > 0;
     
     if (hasSleep && hasDaily) return 'complete';
@@ -212,7 +213,7 @@ export function DataViewer({ onMenuToggle }: { onMenuToggle?: () => void } = {})
         onMenuToggle={onMenuToggle}
       />
 
-      {/* Controls */}
+      <GarminCoverage />
       <Card>
         <CardContent className="flex items-center justify-between flex-wrap gap-4">
           <div className="flex items-center gap-4 flex-wrap">
@@ -306,8 +307,9 @@ export function DataViewer({ onMenuToggle }: { onMenuToggle?: () => void } = {})
                 <tbody>
                   {records.map((record) => {
                     const status = getDataStatus(record);
-                    const intensityMins = (record.daily?.intensity_minutes_moderate || 0) + 
-                                         (record.daily?.intensity_minutes_vigorous || 0) * 2;
+                    const moderate = record.daily?.intensity_minutes_moderate;
+                    const vigorous = record.daily?.intensity_minutes_vigorous;
+                    const intensityMins = moderate != null && vigorous != null ? moderate + vigorous * 2 : null;
                     return (
                       <tr 
                         key={record.date} 
@@ -351,7 +353,7 @@ export function DataViewer({ onMenuToggle }: { onMenuToggle?: () => void } = {})
                           {record.daily?.stress_average ?? '—'}
                         </td>
                         <td className="py-2 px-2 text-right font-mono">
-                          {intensityMins > 0 ? intensityMins : '—'}
+                          {intensityMins ?? '—'}
                         </td>
                         <td className="py-2 px-2 text-right">
                           {record.activities.length > 0 ? (
@@ -450,11 +452,11 @@ export function DataViewer({ onMenuToggle }: { onMenuToggle?: () => void } = {})
                 {selectedDay.daily ? (
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <DataItem label="Resting HR" value={selectedDay.daily.resting_heart_rate ? `${selectedDay.daily.resting_heart_rate} bpm` : null} />
-                    <DataItem label="Avg HR" value={selectedDay.daily.avg_heart_rate ? `${selectedDay.daily.avg_heart_rate} bpm` : null} />
+                    <DataItem label="Mean HR during observed intervals" value={selectedDay.daily.avg_heart_rate ? `${selectedDay.daily.avg_heart_rate} bpm` : null} />
                     <DataItem label="Max HR" value={selectedDay.daily.max_heart_rate ? `${selectedDay.daily.max_heart_rate} bpm` : null} />
                     <DataItem label="Min HR" value={selectedDay.daily.min_heart_rate ? `${selectedDay.daily.min_heart_rate} bpm` : null} />
-                    <DataItem label="Intensity Moderate" value={selectedDay.daily.intensity_minutes_moderate ? `${selectedDay.daily.intensity_minutes_moderate} min` : null} />
-                    <DataItem label="Intensity Vigorous" value={selectedDay.daily.intensity_minutes_vigorous ? `${selectedDay.daily.intensity_minutes_vigorous} min` : null} />
+                    <DataItem label="Intensity Moderate" value={selectedDay.daily.intensity_minutes_moderate != null ? `${selectedDay.daily.intensity_minutes_moderate} min` : null} />
+                    <DataItem label="Intensity Vigorous" value={selectedDay.daily.intensity_minutes_vigorous != null ? `${selectedDay.daily.intensity_minutes_vigorous} min` : null} />
                   </div>
                 ) : (
                   <p className="text-gray-500">No heart rate data for this day</p>

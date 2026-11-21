@@ -1,6 +1,9 @@
 """Wellness data router (sleep and daily metrics)."""
 
 from enum import Enum
+from datetime import date
+from fastapi import HTTPException, Response
+from app.services import observations
 from typing import Optional
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Query
@@ -399,3 +402,39 @@ async def get_recovery_status():
         "trend": result
     }
 
+
+@router.get("/coverage")
+def recorded_coverage():
+    return observations.coverage()
+
+
+@router.get("/observations")
+def garmin_observations(source: str, start: date, end: date, offset: int = Query(0, ge=0),
+                       limit: int = Query(100, ge=1, le=500)):
+    if end < start:
+        raise HTTPException(422, "End date precedes start date")
+    return observations.observations(source, start, end, offset, limit)
+
+
+@router.get("/record")
+def garmin_record(source: str, record_key: str, path: list[str] = Query(default=[]),
+                 offset: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=200)):
+    try:
+        return observations.read_record(source, record_key, path, offset, limit)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+@router.get("/original/{garmin_id}")
+def download_original(garmin_id: int):
+    rows = execute_query("SELECT archive FROM garmin_originals WHERE garmin_id=?", (str(garmin_id),))
+    if not rows:
+        raise HTTPException(404, "Original activity unavailable")
+    return Response(rows[0]["archive"], media_type="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="garmin-{garmin_id}.zip"'})
+
+@router.get("/garmin-trend")
+def garmin_trend(source: str, metric: str, start: date, end: date,
+                offset: int = Query(0, ge=0), limit: int = Query(365, ge=1, le=1000)):
+    if end < start:
+        raise HTTPException(422, "End date precedes start date")
+    return observations.trend(source, metric, start, end, offset, limit)

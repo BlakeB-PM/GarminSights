@@ -16,7 +16,7 @@ export function TrainingLoadCard({ data, loading }: TrainingLoadCardProps) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Activity className="w-5 h-5 text-accent" />
-            Training Load
+            Estimated Training Load
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -28,18 +28,18 @@ export function TrainingLoadCard({ data, loading }: TrainingLoadCardProps) {
     );
   }
 
-  if (!data || data.status === 'no_data') {
+  if (!data || data.load_ratio == null) {
     return (
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Activity className="w-5 h-5 text-accent" />
-            Training Load
+            Estimated Training Load
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="text-center py-8 text-gray-500">
-            <p>No training data available</p>
+            <p>{data?.recommendation ?? 'No training data available'}</p>
             <p className="text-sm mt-1">Sync your data to see training load</p>
           </div>
         </CardContent>
@@ -81,7 +81,7 @@ export function TrainingLoadCard({ data, loading }: TrainingLoadCardProps) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Activity className="w-5 h-5 text-accent" />
-          Training Load
+          Estimated Training Load
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -115,11 +115,11 @@ export function TrainingLoadCard({ data, loading }: TrainingLoadCardProps) {
           {/* Metrics */}
           <div className="grid grid-cols-2 gap-4 pt-4 border-t border-card-border">
             <div>
-              <p className="text-xs text-gray-500">Acute (7d)</p>
+              <p className="text-xs text-gray-500">Recent ({data.acute_days}d avg)</p>
               <p className="text-lg font-mono">{data.acute_load.toFixed(1)}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500">Chronic (28d avg)</p>
+              <p className="text-xs text-gray-500">Baseline ({data.chronic_days}d avg)</p>
               <p className="text-lg font-mono">{data.chronic_load.toFixed(1)}</p>
             </div>
           </div>

@@ -23,6 +23,9 @@ See services/coaching_store.py for the storage layer.
 """
 
 import re
+from datetime import date
+from app.services import observations
+from app.services.garmin_service import get_garmin_service
 import json
 import logging
 from datetime import datetime, timedelta
@@ -60,7 +63,7 @@ mcp = FastMCP(
         "get_muscle_group_volume to find undertrained muscle groups, then "
         "get_daily_wellness and get_sleep for recent sleep, Body Battery, and "
         "stress. Read readiness off those numbers yourself and set intensity from "
-        "it, ignoring days that have not finished syncing. Then build the "
+        "it, checking get_garmin_coverage and get_garmin_metric_trend for Garmin readiness, fitness, and HRV where available. Ignore incomplete days. Then build the "
         "session.\n"
         "4. When Blake states a durable preference, or corrects your programming, "
         "call propose_rule and show him the proposal. It only takes effect once he "
@@ -1111,7 +1114,7 @@ def describe_data() -> dict:
     counts = {}
     for table in (
         "activities", "sleep", "dailies", "strength_sets",
-        "coaching_rules", "training_plans",
+        "coaching_rules", "training_plans", "garmin_metrics", "garmin_records", "garmin_fetches", "garmin_originals",
     ):
         rows = execute_query(f"SELECT COUNT(*) AS c FROM {table}")
         counts[table] = rows[0]["c"] if rows else 0
@@ -1132,6 +1135,7 @@ def describe_data() -> dict:
 
     return {
         "schema": SCHEMA,
+        "recorded_data": "Use get_garmin_coverage, get_garmin_observations and get_garmin_record for source-specific measurements and raw samples.",
         "row_counts": counts,
         "date_ranges": {
             "activities": act_range[0] if act_range else None,
@@ -1163,7 +1167,7 @@ def sync_garmin_data(days_back: int = 7) -> dict:
 
     Syncs activities (including strength sets), sleep records, and daily
     wellness metrics for the past `days_back` days.  Safe to call at any
-    time — already-synced records are silently skipped (idempotent).
+    time. Refreshes existing sessions and performs a bounded observation sync.
 
     Args:
         days_back: How many days of history to sync (1–90, default 7).
@@ -1186,6 +1190,9 @@ def sync_garmin_data(days_back: int = 7) -> dict:
         "sleep_days_synced": result.sleep_days_synced,
         "dailies_synced": result.dailies_synced,
     }
+    for key in ("observations", "historical_observations"):
+        if key in result.details:
+            out[key] = result.details[key]
     if result.error:
         out["error"] = result.error
     # Flag the auth case explicitly so the chat client tells Blake to re-login
@@ -1239,13 +1246,46 @@ def run_sql(query: str, limit: int = 200) -> dict:
     }
 
 
+@mcp.tool
+def get_garmin_coverage() -> dict:
+    """List recorded sources, attempt outcomes, and dates with usable Garmin metrics."""
+    return observations.coverage()
+
+
+@mcp.tool
+def get_garmin_observations(source: str, start: date, end: date, offset: int = 0, limit: int = 100) -> dict:
+    """Read dated observations with units and record keys. Page until both lists end."""
+    return observations.observations(source, start, end, offset, limit)
+
+
+@mcp.tool
+def get_garmin_record(source: str, record_key: str, path: list[str], offset: int = 0, limit: int = 50) -> dict:
+    """Explore a Garmin record. Start at path []; append returned field names or array indices."""
+    return observations.read_record(source, record_key, path, offset, limit)
+
+
+@mcp.tool
+def backfill_garmin_observations(start: date, end: date, source: str | None = None, budget: int = 32) -> dict:
+    """Collect a bounded batch for historical dates. Repeat to resume. For activity sources,
+    refresh the historical activity list first if the sessions have never been synced."""
+    return observations.collect(get_garmin_service(), start, end, budget, source)
+
+
+@mcp.tool
+def refresh_garmin_activities(start: date, end: date) -> dict:
+    """Refresh Garmin session summaries and strength sets for an inclusive window of up to 31 days."""
+    return SyncService().refresh_window(start, end)
+
+
+@mcp.tool
+def get_garmin_metric_trend(source: str, metric: str, start: date, end: date,
+                           offset: int = 0, limit: int = 365) -> list[dict]:
+    """Get dated values and units for one metric from get_garmin_coverage. Missing dates mean no observation."""
+    return observations.trend(source, metric, start, end, offset, limit)
+
+
 # ----------------------------------------------------------------------------
 # ASGI app for mounting into FastAPI (Streamable HTTP). Mounted under the secret
 # path in main.py, so the MCP endpoint is /<MCP_SECRET>/mcp.
 # ----------------------------------------------------------------------------
-
 mcp_app = mcp.http_app(path="/mcp", stateless_http=True)
-
-
-
-
