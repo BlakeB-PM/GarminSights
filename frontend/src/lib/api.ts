@@ -968,3 +968,13 @@ export function getGarminTrend(source: string, metric: string, start: string, en
     day: string; record_key: string; value: number | string; unit: string;
   }[]>);
 }
+
+export interface SessionInsightsData {
+  notes: string[]; sample_count: number; observed_hr_minutes: number;
+  timeline: { elapsed_seconds: number; heart_rate?: number; speed_mps?: number; power_watts?: number }[];
+  exercises: { exercise_name: string; sets: number; reps: number; heaviest_lbs: number | null;
+    previous?: { date: string; sets: number; reps: number; heaviest_lbs: number | null } }[];
+}
+export function getSessionInsights(id: number) {
+  return apiFetch(`${API_BASE}/api/activities/${id}/insights`).then(handleResponse<SessionInsightsData>);
+}

@@ -1288,4 +1288,13 @@ def get_garmin_metric_trend(source: str, metric: str, start: date, end: date,
 # ASGI app for mounting into FastAPI (Streamable HTTP). Mounted under the secret
 # path in main.py, so the MCP endpoint is /<MCP_SECRET>/mcp.
 # ----------------------------------------------------------------------------
+@mcp.tool
+def get_session_insights(activity_id: int) -> dict:
+    """Inspect a session's HR timeline, five-minute effort windows and per-exercise
+    comparisons with the previous session. HR changes depend on workload and warm-up.
+    Volume includes recorded external weight only. Activity ID is the local database ID."""
+    from app.services.session_insights import session_insights
+    return session_insights(activity_id)
+
+
 mcp_app = mcp.http_app(path="/mcp", stateless_http=True)

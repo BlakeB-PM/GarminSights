@@ -1,3 +1,4 @@
+import { SessionInsights } from './SessionInsights';
 import type { Activity } from '../../lib/api';
 import { formatDuration, cn, formatDistanceDual, formatPaceDual, formatSpeedDual, formatElevationDual, formatStrideLengthDual, formatWeightDual } from '../../lib/utils';
 import { 
@@ -118,6 +119,7 @@ export function ActivityDetailView({ activity }: ActivityDetailViewProps) {
   
   return (
     <div className="space-y-4">
+      <SessionInsights key={activity.id} activityId={activity.id} />
       {/* Overview Section */}
       <div>
         <h4 className="flex items-center gap-2 text-sm font-medium text-gray-300 mb-3">
