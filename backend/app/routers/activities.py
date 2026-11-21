@@ -412,3 +412,11 @@ async def get_activity_breakdown(
         }
     }
 
+
+@router.get("/{activity_id:int}/insights")
+def activity_insights(activity_id: int):
+    from app.services.session_insights import session_insights
+    try:
+        return session_insights(activity_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
