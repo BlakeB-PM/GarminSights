@@ -119,6 +119,23 @@ CREATE TABLE IF NOT EXISTS training_plans (
     archived_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS garmin_originals (
+    garmin_id TEXT PRIMARY KEY, archive BLOB NOT NULL
+);
+CREATE TABLE IF NOT EXISTS garmin_records (
+    source TEXT NOT NULL, record_key TEXT NOT NULL, day TEXT NOT NULL, payload TEXT NOT NULL,
+    PRIMARY KEY(source, record_key)
+);
+CREATE TABLE IF NOT EXISTS garmin_metrics (
+    source TEXT NOT NULL, record_key TEXT NOT NULL, day TEXT NOT NULL, metric TEXT NOT NULL,
+    value NOT NULL, unit TEXT NOT NULL, PRIMARY KEY(source,record_key,metric)
+);
+CREATE TABLE IF NOT EXISTS garmin_fetches (
+    source TEXT NOT NULL, record_key TEXT NOT NULL, day TEXT NOT NULL, state TEXT NOT NULL,
+    checked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(source,record_key)
+);
+CREATE INDEX IF NOT EXISTS idx_observation_day ON garmin_records(source,day);
+CREATE INDEX IF NOT EXISTS idx_metric_day ON garmin_metrics(source,day);
 -- Create indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_activities_start_time ON activities(start_time);
 CREATE INDEX IF NOT EXISTS idx_activities_type ON activities(activity_type);

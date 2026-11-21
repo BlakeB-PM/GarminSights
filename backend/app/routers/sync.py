@@ -1,6 +1,10 @@
 """Data sync router."""
 
 import logging
+from datetime import date
+from fastapi import Query
+from app.services import observations
+from app.services.garmin_service import GarminAuthError
 from fastapi import APIRouter, HTTPException
 
 from app.models.schemas import SyncRequest, SyncStatus
@@ -175,7 +179,7 @@ async def backfill_strength_data():
 @router.post("/backfill-wellness")
 async def backfill_wellness_fields(days_back: int = 30):
     """
-    Backfill missing wellness fields (avg_heart_rate, hrv_average, resting_hr, stress durations)
+    Backfill missing overnight HRV, resting HR, and stress durations
     from raw_json for existing records.
     
     This re-extracts these fields from the stored raw_json without re-fetching from Garmin.
@@ -196,3 +200,12 @@ async def backfill_wellness_fields(days_back: int = 30):
             "error": str(e)
         }
 
+
+@router.post("/observations")
+def backfill_observations(start: date, end: date, source: str | None = None, budget: int = Query(32, ge=1, le=100)):
+    try:
+        return observations.collect(get_garmin_service(), start, end, budget, source)
+    except GarminAuthError as exc:
+        raise HTTPException(401, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc

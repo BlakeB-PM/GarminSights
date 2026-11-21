@@ -2,7 +2,7 @@
 
 from typing import Optional
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, HTTPException
 
 from app.database import execute_query
 from app.models.schemas import (
@@ -121,7 +121,7 @@ async def get_activity_heatmap(days: int = Query(30, ge=7, le=90)):
     return heatmap
 
 
-@router.get("/{activity_id}", response_model=ActivityWithSets)
+@router.get("/{activity_id:int}", response_model=ActivityWithSets)
 async def get_activity(activity_id: int):
     """Get a single activity with all available metrics and strength sets if applicable."""
     activities = execute_query(
@@ -227,21 +227,17 @@ async def get_training_load(
     Training load = sum of (duration_minutes * intensity_factor)
     Intensity factor based on activity type and calories.
     """
-    now = datetime.now()
-    
-    # Determine acute load date range
-    if start_date and end_date:
-        acute_start = start_date
-        acute_end = end_date
-    else:
-        # Default to last 7 days
-        seven_days_ago = (now - timedelta(days=7)).strftime("%Y-%m-%d")
-        acute_start = seven_days_ago
-        acute_end = now.strftime("%Y-%m-%d")
-    
-    # Chronic load uses the period ending at acute_end, going back chronic_days
-    chronic_start_date = (datetime.strptime(acute_end, "%Y-%m-%d") - timedelta(days=chronic_days)).strftime("%Y-%m-%d")
-    
+    try:
+        end = datetime.strptime(end_date, "%Y-%m-%d").date() if end_date else datetime.now().date()
+        start = datetime.strptime(start_date, "%Y-%m-%d").date() if start_date else end - timedelta(days=6)
+    except ValueError as exc:
+        raise HTTPException(422, "Use YYYY-MM-DD dates") from exc
+    acute_days = (end - start).days + 1
+    if acute_days < 1:
+        raise HTTPException(422, "End date precedes start date")
+    acute_start, acute_end = start.isoformat(), end.isoformat()
+    chronic_start_date = (end - timedelta(days=chronic_days - 1)).isoformat()
+
     # Get activities for acute load (custom date range)
     # Use DATE() function for proper date comparison and handle NULL values
     acute_activities = execute_query(
@@ -327,39 +323,32 @@ async def get_training_load(
     chronic_days_count = chronic_days
     chronic_load = chronic_load_total / chronic_days_count if chronic_load_total > 0 else 0.0
     
-    # Calculate load ratio
-    # If we have acute load but no chronic load (insufficient data), use acute load as baseline
-    if chronic_load == 0 and acute_load > 0:
-        # Not enough historical data - use acute load as both values
-        chronic_load = acute_load
-        load_ratio = 1.0
-    else:
-        load_ratio = acute_load / chronic_load if chronic_load > 0 else 0.0
-    
-    # Determine status and recommendation
-    if acute_load == 0 and chronic_load == 0:
-        status = "no_data"
-        recommendation = "No training data available. Start tracking activities to see training load."
-    elif chronic_load == 0 and acute_load > 0:
-        status = "insufficient_data"
-        recommendation = "Insufficient historical data (need 28 days). Training load calculated from recent week only."
+    acute_load /= acute_days
+    load_ratio = acute_load / chronic_load if chronic_load else None
+    earliest = execute_query("SELECT min(date(start_time)) AS day FROM activities")[0]["day"]
+    if not acute_activities and not chronic_activities:
+        status, recommendation = "no_data", "No recorded activities in this window."
+    elif not earliest or earliest > chronic_start_date or load_ratio is None:
+        status, recommendation = "insufficient_data", "A full baseline is unavailable."
+        load_ratio = None
     elif load_ratio < 0.8:
         status = "under_training"
-        recommendation = "Training load is below optimal. Consider increasing volume gradually."
+        recommendation = "Recent daily load is below the baseline."
     elif load_ratio <= 1.3:
         status = "optimal"
-        recommendation = "Training load is in the optimal range. Maintain current volume."
+        recommendation = "Recent daily load is near the baseline."
     elif load_ratio <= 1.5:
         status = "caution"
-        recommendation = "Training load is elevated. Monitor recovery closely and consider a lighter week."
+        recommendation = "Recent daily load is above the baseline."
     else:
         status = "danger"
-        recommendation = "Training load is very high. High injury risk. Consider a deload week."
+        recommendation = "Recent daily load is well above the baseline."
     
     return {
         "acute_load": round(acute_load, 1),
         "chronic_load": round(chronic_load, 1),
-        "load_ratio": round(load_ratio, 2),
+        "load_ratio": round(load_ratio, 2) if load_ratio is not None else None,
+        "acute_days": acute_days, "chronic_days": chronic_days,
         "status": status,
         "recommendation": recommendation
     }

@@ -303,7 +303,9 @@ export interface ActivityBreakdown {
 export interface TrainingLoad {
   acute_load: number;
   chronic_load: number;
-  load_ratio: number;
+  load_ratio: number | null;
+  acute_days: number;
+  chronic_days: number;
   status: string;
   recommendation: string;
 }
@@ -927,4 +929,42 @@ export async function sendChatMessage(
     body: JSON.stringify({ message, context_days: contextDays }),
   });
   return handleResponse<ChatResponse>(response);
+}
+
+export interface CoverageSource {
+  source: string; records: number; first_day?: string; latest_day?: string;
+  checked_at?: string; errors?: number; empty?: number;
+}
+interface MetricCoverage {
+  source: string; metric: string; unit: string; days: number; first_day: string; latest_day: string;
+}
+export function getGarminCoverage() {
+  return apiFetch(`${API_BASE}/api/wellness/coverage`).then(handleResponse<{
+    sources: CoverageSource[]; metrics: MetricCoverage[];
+  }>);
+}
+export function getGarminObservations(source: string, start: string, end: string, offset: number) {
+  const params = new URLSearchParams({ source, start, end, offset: String(offset), limit: '30' });
+  return apiFetch(`${API_BASE}/api/wellness/observations?${params}`).then(handleResponse<{
+    metrics: { day: string; record_key: string; metric: string; value: string | number; unit: string }[];
+    records: { day: string; record_key: string }[];
+  }>);
+}
+export function getGarminRecord(source: string, key: string, path: string[], offset: number) {
+  const params = new URLSearchParams({ source, record_key: key, offset: String(offset) });
+  path.forEach(part => params.append('path', part));
+  return apiFetch(`${API_BASE}/api/wellness/record?${params}`).then(handleResponse<{
+    total?: number; value?: unknown;
+    fields?: { key: string; kind?: string; size?: number; value?: unknown }[];
+  }>);
+}
+
+export function garminOriginalUrl(id: string) {
+  return `${API_BASE}/api/wellness/original/${encodeURIComponent(id)}`;
+}
+export function getGarminTrend(source: string, metric: string, start: string, end: string) {
+  const params = new URLSearchParams({ source, metric, start, end, limit: '1000' });
+  return apiFetch(`${API_BASE}/api/wellness/garmin-trend?${params}`).then(handleResponse<{
+    day: string; record_key: string; value: number | string; unit: string;
+  }[]>);
 }

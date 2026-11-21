@@ -526,6 +526,20 @@ class GarminService:
         """Get the current username."""
         return self._username
     
+    def fetch_observation(self, method: str, *args):
+        ready, error = self.ensure_client()
+        if not ready:
+            raise GarminAuthError(error or login_required_message())
+        try:
+            return getattr(self._client, method)(*args)
+        except Exception as exc:
+            if _is_auth_error(exc):
+                raise GarminAuthError(login_required_message()) from exc
+            raise
+
+    def fetch_activity_range(self, start: str, end: str):
+        return self.fetch_observation("get_activities_by_date", start, end)
+
     def fetch_activities(
         self,
         limit: int = 50,
@@ -600,7 +614,7 @@ class GarminService:
             if _is_auth_error(e):
                 raise GarminAuthError(login_required_message()) from e
             logger.error(f"Failed to fetch exercise sets for {activity_id}: {e}")
-            return None
+            raise
     
     def fetch_sleep(self, date_str: str) -> Optional[dict]:
         """
@@ -622,7 +636,7 @@ class GarminService:
             if _is_auth_error(e):
                 raise GarminAuthError(login_required_message()) from e
             logger.error(f"Failed to fetch sleep data for {date_str}: {e}")
-            return None
+            raise
     
     def fetch_daily_summary(self, date_str: str) -> Optional[dict]:
         """
@@ -644,7 +658,7 @@ class GarminService:
             if _is_auth_error(e):
                 raise GarminAuthError(login_required_message()) from e
             logger.error(f"Failed to fetch daily summary for {date_str}: {e}")
-            return None
+            raise
 
 
 # Singleton instance

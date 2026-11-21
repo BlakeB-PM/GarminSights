@@ -281,7 +281,7 @@ def run_migrations() -> None:
         return
     
     current_version = get_schema_version(db_path)
-    target_version = 4
+    target_version = 5
     
     if current_version >= target_version:
         logger.info(f"Database is at version {current_version}, no migrations needed")
@@ -309,5 +309,10 @@ def run_migrations() -> None:
         migration_4_seed_coaching_rules()
         set_schema_version(db_path, 4)
     
+    if current_version < 5:
+        from app.services.observations import migrate_history
+        migrate_history()
+        set_schema_version(db_path, 5)
+
     logger.info("All migrations completed successfully")
 

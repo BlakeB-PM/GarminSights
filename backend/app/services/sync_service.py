@@ -2,10 +2,11 @@
 
 import json
 import logging
+from app.services import observations
 from datetime import datetime, timedelta
 from typing import Optional
 
-from app.database import execute_query, execute_write, execute_many, get_db
+from app.database import execute_query, execute_write, get_db
 from app.services.garmin_service import (
     GarminAuthError,
     GarminService,
@@ -14,6 +15,10 @@ from app.services.garmin_service import (
 from app.models.schemas import SyncStatus
 
 logger = logging.getLogger(__name__)
+
+
+def first_present(*values):
+    return next((v for v in values if v is not None), None)
 
 
 class SyncService:
@@ -70,7 +75,7 @@ class SyncService:
             logger.info(f"Activities sync complete: {activities_count} activities, {sets_count} strength sets")
             
             if activities_count == 0:
-                status.warnings.append("No new activities synced. This may indicate: all activities already exist, API returned no data, or authentication issue.")
+                status.warnings.append("Garmin returned no activities in this window.")
             
             # Sync sleep and daily data
             logger.info("Syncing sleep data...")
@@ -87,6 +92,33 @@ class SyncService:
             if status.dailies_synced == 0:
                 status.warnings.append("No daily metrics synced or updated. This may indicate: no daily data in Garmin Connect for this date range, API returned no data, or all records are already up to date.")
             
+            end = datetime.now().date()
+            # Restore a historical day each run. The old sets envelope is
+            # already archived by migration 5. A failed repair remains due.
+            pending = execute_query("""SELECT date(a.start_time) day FROM activities a
+                LEFT JOIN garmin_fetches f ON f.source='summary_repair' AND f.record_key=date(a.start_time)
+                WHERE (f.checked_at IS NULL OR f.checked_at<datetime('now','-1 day')) AND json_valid(raw_json) AND json_type(raw_json,'$.exerciseSets')='array'
+                ORDER BY start_time DESC LIMIT 1""")
+            if pending and pending[0]["day"]:
+                repair_day = datetime.fromisoformat(pending[0]["day"]).date()
+                restored, _ = self.refresh_activities(repair_day, repair_day)
+                with get_db() as conn, conn:
+                    observations.mark(conn, "summary_repair", repair_day.isoformat(), repair_day.isoformat(),
+                                      "saved" if restored else "empty")
+            extra = observations.collect(self._garmin, end - timedelta(days=days_back-1), end, 32)
+            status.details["observations"] = extra
+            first_day = execute_query("""SELECT min(day) day FROM (
+                SELECT min(date(start_time)) day FROM activities UNION ALL
+                SELECT min(date) FROM sleep WHERE total_sleep_seconds>0 UNION ALL
+                SELECT min(date) FROM dailies WHERE steps IS NOT NULL)""")[0]["day"]
+            history_end = end - timedelta(days=min(days_back, 3))
+            if first_day and first_day <= history_end.isoformat() and not extra.get("rate_limited"):
+                status.details["historical_observations"] = observations.collect(
+                    self._garmin, max(datetime.fromisoformat(first_day).date(), history_end-timedelta(days=3659)),
+                    history_end, 8, oldest_first=True)
+
+            if extra["errors"] or status.details.get("historical_observations", {}).get("errors"):
+                status.warnings.append("Some additional Garmin requests failed. See Garmin data coverage.")
             status.success = True
             logger.info(f"Full sync complete: {status.activities_synced} activities, {status.sleep_days_synced} sleep days, {status.dailies_synced} daily records")
             
@@ -116,130 +148,40 @@ class SyncService:
         Returns:
             Tuple of (activities_synced, strength_sets_extracted)
         """
-        activities_synced = 0
-        sets_extracted = 0
-        start = 0
-        batch_size = limit
-        cutoff_date = (datetime.now() - timedelta(days=days_back)).date()
-        consecutive_existing = 0
-        max_consecutive_existing = 50  # Stop after 50 consecutive existing activities
-        
-        # Check if Garmin client is available
-        if not self._garmin:
-            logger.error("Garmin service not initialized. Cannot sync activities.")
-            return 0, 0
-        ready, auth_error = self._garmin.ensure_client()
-        if not ready:
-            raise GarminAuthError(auth_error or "Garmin Connect is not authenticated.")
-        
-        logger.info(f"Starting activity sync (days_back={days_back}, batch_size={batch_size})")
-        
-        while True:
-            # Fetch next batch
-            try:
-                activities = self._garmin.fetch_activities(limit=batch_size, start=start)
-            except GarminAuthError:
-                # A dead token affects every batch; retrying just wastes calls.
-                raise
-            except Exception as e:
-                error_msg = f"Failed to fetch activities batch (start={start}): {e}"
-                logger.error(error_msg)
-                # If first batch fails, likely an auth or API issue
-                if start == 0:
-                    logger.error("Initial activity fetch failed - check authentication and API access")
-                    break
-                # For later batches, continue trying
-                start += batch_size
-                continue
-            
-            if not activities:
-                if start == 0:
-                    logger.warning("No activities returned from Garmin API. Possible causes: authentication expired, no activities in account, or API access issue.")
-                else:
-                    logger.info("No more activities to fetch")
-                break
-            
-            logger.info(f"Fetched {len(activities)} activities (start={start})")
-            
-            batch_synced = 0
-            
-            for activity in activities:
-                garmin_id = str(activity.get("activityId"))
-                
-                # Check if already exists
-                existing = execute_query(
-                    "SELECT id FROM activities WHERE garmin_id = ?",
-                    (garmin_id,)
-                )
-                
-                if existing:
-                    consecutive_existing += 1
-                    # If we've seen many consecutive existing activities, we've likely caught up
-                    if consecutive_existing >= max_consecutive_existing:
-                        logger.info(f"Reached {max_consecutive_existing} consecutive existing activities, stopping sync")
-                        return activities_synced, sets_extracted
-                    continue
-                
-                # Reset counter when we find a new activity
-                consecutive_existing = 0
-                
-                # Check date cutoff - stop if activity is too old
-                start_time_str = activity.get("startTimeLocal")
-                if start_time_str:
-                    try:
-                        # Parse date from ISO format
-                        activity_date = datetime.fromisoformat(start_time_str.replace('Z', '+00:00')).date()
-                        if activity_date < cutoff_date:
-                            logger.info(f"Reached date cutoff ({cutoff_date}), stopping sync")
-                            return activities_synced, sets_extracted
-                    except (ValueError, AttributeError):
-                        # If date parsing fails, continue anyway
-                        pass
-                
-                # Determine activity type
-                activity_type = activity.get("activityType", {}).get("typeKey", "unknown")
-                
-                # Insert activity
-                activity_id = execute_write(
-                    """INSERT INTO activities 
-                       (garmin_id, activity_type, name, start_time, duration_seconds, 
-                        distance_meters, calories, raw_json)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        garmin_id,
-                        activity_type,
-                        activity.get("activityName"),
-                        start_time_str,
-                        activity.get("duration"),
-                        activity.get("distance"),
-                        activity.get("calories"),
-                        json.dumps(activity)
-                    )
-                )
-                activities_synced += 1
-                batch_synced += 1
-                
-                # Deep fetch for strength training
-                if activity_type == "strength_training":
-                    sets_count = self._deep_fetch_strength(activity_id, garmin_id)
-                    sets_extracted += sets_count
-            
-            # If this batch had no new activities and we've checked enough, stop
-            if batch_synced == 0 and start > 0:
-                logger.info("No new activities in this batch, stopping sync")
-                break
-            
-            # Move to next batch
-            start += batch_size
-            
-            # Safety limit: don't fetch more than 1000 activities in one sync
-            if start >= 1000:
-                logger.info("Reached safety limit of 1000 activities, stopping sync")
-                break
-        
-        logger.info(f"Synced {activities_synced} activities, {sets_extracted} strength sets")
-        return activities_synced, sets_extracted
-    
+        end = datetime.now().date()
+        return self.refresh_activities(end - timedelta(days=days_back - 1), end)
+
+    def refresh_window(self, start, end):
+        if end < start or end > datetime.now().date() or (end-start).days > 30:
+            raise ValueError("Choose up to 31 days ending today or earlier")
+        activities, sets = self.refresh_activities(start, end)
+        return {"activities": activities, "sets": sets}
+
+    def refresh_activities(self, start, end):
+        activities = self._garmin.fetch_activity_range(start.isoformat(), end.isoformat())
+        sets_count = 0
+        for activity in activities:
+            if not activity.get("activityId") or not activity.get("startTimeLocal"):
+                raise ValueError("Garmin activity is missing an ID or local timestamp")
+            key = str(activity["activityId"])
+            stamp = activity["startTimeLocal"]
+            kind = activity.get("activityType", {}).get("typeKey", "unknown")
+            with get_db() as conn, conn:
+                row = conn.execute("""
+                    INSERT INTO activities(garmin_id,activity_type,name,start_time,duration_seconds,
+                                           distance_meters,calories,raw_json) VALUES(?,?,?,?,?,?,?,?)
+                    ON CONFLICT(garmin_id) DO UPDATE SET activity_type=excluded.activity_type,
+                        name=excluded.name,start_time=excluded.start_time,duration_seconds=excluded.duration_seconds,
+                        distance_meters=excluded.distance_meters,calories=excluded.calories,raw_json=excluded.raw_json
+                    RETURNING id
+                """, (key, kind, activity.get("activityName"), stamp, activity.get("duration"),
+                      activity.get("distance"), activity.get("calories"), json.dumps(activity))).fetchone()
+                observations.index_metrics(conn, "summary", key, stamp[:10], activity)
+                observations.mark(conn, "summary", key, stamp[:10], "saved")
+            if kind == "strength_training":
+                sets_count += self._deep_fetch_strength(row["id"], key)
+        return len(activities), sets_count
+
     def _deep_fetch_strength(self, activity_id: int, garmin_id: str) -> int:
         """
         Perform deep fetch for strength training activity.
@@ -261,17 +203,10 @@ class SyncService:
                 logger.debug(f"No exercise sets data for {garmin_id}")
                 return 0
             
-            exercise_sets = exercise_data.get("exerciseSets", [])
-            if not exercise_sets:
-                logger.debug(f"Empty exercise sets for {garmin_id}")
-                return 0
-            
-            # Update activity with exercise data
-            execute_write(
-                "UPDATE activities SET raw_json = ? WHERE id = ?",
-                (json.dumps(exercise_data), activity_id)
-            )
-            
+            exercise_sets = exercise_data.get("exerciseSets")
+            if not isinstance(exercise_sets, list):
+                raise ValueError("Missing exerciseSets collection")
+            rows = []
             # Process and insert all sets (including REST periods)
             sets_inserted = 0
             for set_num, exercise_set in enumerate(exercise_sets, 1):
@@ -314,11 +249,7 @@ class SyncService:
                     if exercise_category == "CARDIO" and not reps:
                         continue
                 
-                execute_write(
-                    """INSERT INTO strength_sets 
-                       (activity_id, exercise_name, set_number, reps, weight_lbs, 
-                        duration_seconds, raw_json)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                rows.append(
                     (
                         activity_id,
                         exercise_name,
@@ -331,6 +262,13 @@ class SyncService:
                 )
                 sets_inserted += 1
             
+            with get_db() as conn, conn:
+                day = conn.execute("SELECT date(start_time) day FROM activities WHERE id=?", (activity_id,)).fetchone()["day"]
+                observations.save_payload(conn, "sets", garmin_id, day, exercise_data)
+                observations.mark(conn, "sets", garmin_id, day, "saved")
+                conn.execute("DELETE FROM strength_sets WHERE activity_id=?", (activity_id,))
+                conn.executemany("""INSERT INTO strength_sets(activity_id,exercise_name,set_number,reps,
+                    weight_lbs,duration_seconds,raw_json) VALUES(?,?,?,?,?,?,?)""", rows)
             if sets_inserted > 0:
                 logger.info(f"Extracted {sets_inserted} sets from activity {garmin_id}")
             return sets_inserted
@@ -339,7 +277,7 @@ class SyncService:
             raise
         except Exception as e:
             logger.error(f"Deep fetch failed for {garmin_id}: {e}", exc_info=True)
-            return 0
+            raise
     
     def backfill_strength_details(self) -> tuple[int, int]:
         """
@@ -406,6 +344,8 @@ class SyncService:
             try:
                 sleep_data = self._garmin.fetch_sleep(date_str)
                 if not sleep_data:
+                    with get_db() as conn, conn:
+                        observations.mark(conn, "sleep", date_str, date_str, "empty")
                     # Log only occasionally to avoid spam
                     if i % 7 == 0:  # Log every 7 days
                         logger.debug(f"No sleep data available for {date_str}")
@@ -440,30 +380,37 @@ class SyncService:
                 
                 # Check if this is an update or new record
                 existing = execute_query(
-                    "SELECT id FROM sleep WHERE date = ?",
+                    "SELECT id,total_sleep_seconds FROM sleep WHERE date = ?",
                     (date_str,)
                 )
+                if existing and existing[0]["total_sleep_seconds"] and not daily_sleep.get("sleepTimeSeconds"):
+                    with get_db() as conn, conn:
+                        observations.mark(conn, "sleep", date_str, date_str, "empty")
+                    continue
                 is_update = bool(existing)
                 
-                execute_write(
-                    """INSERT OR REPLACE INTO sleep 
-                       (date, sleep_score, total_sleep_seconds, deep_sleep_seconds,
-                        light_sleep_seconds, rem_sleep_seconds, awake_seconds,
-                        hrv_average, resting_hr, raw_json)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        date_str,
-                        daily_sleep.get("sleepScores", {}).get("overall", {}).get("value") if isinstance(daily_sleep.get("sleepScores"), dict) else daily_sleep.get("sleepScore"),
-                        daily_sleep.get("sleepTimeSeconds"),
-                        daily_sleep.get("deepSleepSeconds"),
-                        daily_sleep.get("lightSleepSeconds"),
-                        daily_sleep.get("remSleepSeconds"),
-                        daily_sleep.get("awakeSleepSeconds"),
-                        hrv_value,
-                        resting_hr_value,
-                        json.dumps(sleep_data)
+                with get_db() as conn, conn:
+                    conn.execute(
+                        """INSERT OR REPLACE INTO sleep
+                           (date, sleep_score, total_sleep_seconds, deep_sleep_seconds,
+                            light_sleep_seconds, rem_sleep_seconds, awake_seconds,
+                            hrv_average, resting_hr, raw_json)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            date_str,
+                            daily_sleep.get("sleepScores", {}).get("overall", {}).get("value") if isinstance(daily_sleep.get("sleepScores"), dict) else daily_sleep.get("sleepScore"),
+                            daily_sleep.get("sleepTimeSeconds"),
+                            daily_sleep.get("deepSleepSeconds"),
+                            daily_sleep.get("lightSleepSeconds"),
+                            daily_sleep.get("remSleepSeconds"),
+                            daily_sleep.get("awakeSleepSeconds"),
+                            hrv_value,
+                            resting_hr_value,
+                            json.dumps(sleep_data)
+                        )
                     )
-                )
+                    observations.index_metrics(conn, "sleep", date_str, date_str, sleep_data)
+                    observations.mark(conn, "sleep", date_str, date_str, "saved")
                 synced += 1
                 if is_update:
                     logger.debug(f"Updated existing sleep record for {date_str}")
@@ -471,7 +418,9 @@ class SyncService:
             except GarminAuthError:
                 raise
             except Exception as e:
-                logger.warning(f"Failed to sync sleep for {date_str}: {e}")
+                with get_db() as conn, conn:
+                    observations.mark(conn, "sleep", date_str, date_str, "error")
+                raise
         
         logger.info(f"Synced {synced} days of sleep data")
         return synced
@@ -493,6 +442,8 @@ class SyncService:
             try:
                 daily_data = self._garmin.fetch_daily_summary(date_str)
                 if not daily_data:
+                    with get_db() as conn, conn:
+                        observations.mark(conn, "daily", date_str, date_str, "empty")
                     # Log only occasionally to avoid spam
                     if i % 7 == 0:  # Log every 7 days
                         logger.debug(f"No daily data available for {date_str}")
@@ -516,51 +467,59 @@ class SyncService:
                 
                 # Check if this is an update or new record
                 existing = execute_query(
-                    "SELECT id FROM dailies WHERE date = ?",
+                    "SELECT id,steps,resting_heart_rate FROM dailies WHERE date = ?",
                     (date_str,)
                 )
+                if (existing and (existing[0]["steps"] is not None or existing[0]["resting_heart_rate"] is not None)
+                        and all(daily_data.get(k) is None for k in ("totalSteps", "steps", "restingHeartRate"))):
+                    with get_db() as conn, conn:
+                        observations.mark(conn, "daily", date_str, date_str, "empty")
+                    continue
                 is_update = bool(existing)
                 
-                execute_write(
-                    """INSERT OR REPLACE INTO dailies 
-                       (date, steps, distance_meters,
-                        active_calories, calories_total, calories_bmr,
-                        body_battery_high, body_battery_low, body_battery_charged, body_battery_drained,
-                        stress_average, stress_high, low_stress_duration, medium_stress_duration, high_stress_duration,
-                        rest_stress_duration, activity_stress_duration,
-                        intensity_minutes_moderate, intensity_minutes_vigorous, intensity_minutes_goal,
-                        avg_heart_rate, max_heart_rate, min_heart_rate, resting_heart_rate,
-                        raw_json)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        date_str,
-                        daily_data.get("totalSteps") or daily_data.get("steps"),
-                        daily_data.get("totalDistanceMeters") or daily_data.get("distanceMeters"),
-                        daily_data.get("activeKilocalories") or daily_data.get("activeCalories"),
-                        daily_data.get("totalKilocalories") or daily_data.get("totalCalories"),
-                        daily_data.get("bmrKilocalories") or daily_data.get("bmrCalories"),
-                        daily_data.get("bodyBatteryHighestValue") or get_nested(body_battery, "highestValue") or get_nested(body_battery, "high"),
-                        daily_data.get("bodyBatteryLowestValue") or get_nested(body_battery, "lowestValue") or get_nested(body_battery, "low"),
-                        daily_data.get("bodyBatteryChargedValue") or get_nested(body_battery, "chargedValue") or get_nested(body_battery, "charged"),
-                        daily_data.get("bodyBatteryDrainedValue") or get_nested(body_battery, "drainedValue") or get_nested(body_battery, "drained"),
-                        daily_data.get("averageStressLevel"),  # Stored as stress_average
-                        daily_data.get("maxStressLevel"),  # Stored as stress_high
-                        daily_data.get("lowStressDuration"),  # Stored as low_stress_duration
-                        daily_data.get("mediumStressDuration"),  # Stored as medium_stress_duration
-                        daily_data.get("highStressDuration"),  # Stored as high_stress_duration
-                        daily_data.get("restStressDuration"),
-                        daily_data.get("activityStressDuration"),
-                        daily_data.get("moderateIntensityMinutes") or get_nested(intensity, "moderateIntensityMinutes") or get_nested(intensity, "moderate") or daily_data.get("moderateMinutes"),
-                        daily_data.get("vigorousIntensityMinutes") or get_nested(intensity, "vigorousIntensityMinutes") or get_nested(intensity, "vigorous") or daily_data.get("vigorousMinutes"),
-                        daily_data.get("intensityMinutesGoal") or get_nested(intensity, "goal") or daily_data.get("intensityGoal"),
-                        # averageHeartRate doesn't exist in Garmin API - calculate from min/max if both exist
-                        (int((daily_data.get("minAvgHeartRate") + daily_data.get("maxAvgHeartRate")) / 2) if daily_data.get("minAvgHeartRate") is not None and daily_data.get("maxAvgHeartRate") is not None else None),
-                        daily_data.get("maxHeartRate"),
-                        daily_data.get("minHeartRate"),
-                        daily_data.get("restingHeartRate"),
-                        json.dumps(daily_data)
+                with get_db() as conn, conn:
+                    conn.execute(
+                        """INSERT OR REPLACE INTO dailies
+                           (date, steps, distance_meters,
+                            active_calories, calories_total, calories_bmr,
+                            body_battery_high, body_battery_low, body_battery_charged, body_battery_drained,
+                            stress_average, stress_high, low_stress_duration, medium_stress_duration, high_stress_duration,
+                            rest_stress_duration, activity_stress_duration,
+                            intensity_minutes_moderate, intensity_minutes_vigorous, intensity_minutes_goal,
+                            avg_heart_rate, max_heart_rate, min_heart_rate, resting_heart_rate,
+                            raw_json)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            date_str,
+                            first_present(daily_data.get("totalSteps"), daily_data.get("steps")),
+                            first_present(daily_data.get("totalDistanceMeters"), daily_data.get("distanceMeters")),
+                            first_present(daily_data.get("activeKilocalories"), daily_data.get("activeCalories")),
+                            first_present(daily_data.get("totalKilocalories"), daily_data.get("totalCalories")),
+                            first_present(daily_data.get("bmrKilocalories"), daily_data.get("bmrCalories")),
+                            first_present(daily_data.get("bodyBatteryHighestValue"), get_nested(body_battery, "highestValue"), get_nested(body_battery, "high")),
+                            first_present(daily_data.get("bodyBatteryLowestValue"), get_nested(body_battery, "lowestValue"), get_nested(body_battery, "low")),
+                            first_present(daily_data.get("bodyBatteryChargedValue"), get_nested(body_battery, "chargedValue"), get_nested(body_battery, "charged")),
+                            first_present(daily_data.get("bodyBatteryDrainedValue"), get_nested(body_battery, "drainedValue"), get_nested(body_battery, "drained")),
+                            daily_data.get("averageStressLevel"),  # Stored as stress_average
+                            daily_data.get("maxStressLevel"),  # Stored as stress_high
+                            daily_data.get("lowStressDuration"),  # Stored as low_stress_duration
+                            daily_data.get("mediumStressDuration"),  # Stored as medium_stress_duration
+                            daily_data.get("highStressDuration"),  # Stored as high_stress_duration
+                            daily_data.get("restStressDuration"),
+                            daily_data.get("activityStressDuration"),
+                            first_present(daily_data.get("moderateIntensityMinutes"), get_nested(intensity, "moderateIntensityMinutes"), get_nested(intensity, "moderate"), daily_data.get("moderateMinutes")),
+                            first_present(daily_data.get("vigorousIntensityMinutes"), get_nested(intensity, "vigorousIntensityMinutes"), get_nested(intensity, "vigorous"), daily_data.get("vigorousMinutes")),
+                            first_present(daily_data.get("intensityMinutesGoal"), get_nested(intensity, "goal"), daily_data.get("intensityGoal")),
+                            None,  # No measured daily average in this payload.
+                            daily_data.get("maxHeartRate"),
+                            daily_data.get("minHeartRate"),
+                            daily_data.get("restingHeartRate"),
+                            json.dumps(daily_data)
+                        )
                     )
-                )
+                    observations.index_metrics(conn, "daily", date_str, date_str, daily_data)
+                    observations.update_observed_hr(conn, date_str)
+                    observations.mark(conn, "daily", date_str, date_str, "saved")
                 synced += 1
                 if is_update:
                     logger.debug(f"Updated existing daily record for {date_str}")
@@ -568,14 +527,16 @@ class SyncService:
             except GarminAuthError:
                 raise
             except Exception as e:
-                logger.warning(f"Failed to sync dailies for {date_str}: {e}")
+                with get_db() as conn, conn:
+                    observations.mark(conn, "daily", date_str, date_str, "error")
+                raise
         
         logger.info(f"Synced {synced} days of daily data")
         return synced
     
     def backfill_wellness_fields(self, days_back: int = 30) -> dict:
         """
-        Backfill missing wellness fields (avg_heart_rate, hrv_average, resting_hr, stress durations)
+        Backfill missing overnight HRV, resting HR, and stress durations
         from raw_json for existing records.
         
         Returns:
@@ -604,9 +565,9 @@ class SyncService:
             
             # Get existing daily record with missing fields
             dailies = execute_query(
-                """SELECT id, raw_json, low_stress_duration, medium_stress_duration, high_stress_duration, avg_heart_rate 
+                """SELECT id, raw_json, low_stress_duration, medium_stress_duration, high_stress_duration
                    FROM dailies 
-                   WHERE date = ? AND (low_stress_duration IS NULL OR medium_stress_duration IS NULL OR high_stress_duration IS NULL OR avg_heart_rate IS NULL)""",
+                   WHERE date = ? AND (low_stress_duration IS NULL OR medium_stress_duration IS NULL OR high_stress_duration IS NULL )""",
                 (date_str,)
             )
             
@@ -628,13 +589,6 @@ class SyncService:
                     medium_stress_duration = daily_data.get("mediumStressDuration")
                     high_stress_duration = daily_data.get("highStressDuration")
                     
-                    # averageHeartRate doesn't exist - calculate from min/max if both exist
-                    avg_heart_rate = None
-                    min_avg_hr = daily_data.get("minAvgHeartRate")
-                    max_avg_hr = daily_data.get("maxAvgHeartRate")
-                    if min_avg_hr is not None and max_avg_hr is not None:
-                        avg_heart_rate = (min_avg_hr + max_avg_hr) / 2
-                    
                     # Update only if we found a value and the current value is NULL
                     updates = []
                     params = []
@@ -650,10 +604,6 @@ class SyncService:
                     if high_stress_duration is not None and daily.get("high_stress_duration") is None:
                         updates.append("high_stress_duration = ?")
                         params.append(high_stress_duration)
-                    
-                    if avg_heart_rate is not None and daily.get("avg_heart_rate") is None:
-                        updates.append("avg_heart_rate = ?")
-                        params.append(avg_heart_rate)
                     
                     if updates:
                         params.append(daily["id"])
